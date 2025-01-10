@@ -5,6 +5,10 @@ name = "pypi"
 
 [packages]
 pygithub = "*"
+python-dotenv = "*"
+langchain = "*"
+langchain-anthropic = "*"
+langgraph = "*"
 
 [dev-packages]
 
