@@ -14,9 +14,16 @@ graph = create_graph(os.getenv("ANTHROPIC_API_KEY"))
 # Configure the execution
 config = {"configurable": {"thread_id": "example_chat"}}
 
+# analysis_prompt = """
+# I need a comprehensive analysis of the most popular AI framework repositories.
+# 1. First, find the top 5 AI framework repositories with more than 10000 stars
+# 2. For each of these repositories, analyze their recent activity
+# 3. Provide a summary of which framework seems to be most actively maintained
+# """
+
 analysis_prompt = """
-I need a comprehensive analysis of the most popular AI framework repositories.
-1. First, find the top 5 AI framework repositories with more than 10000 stars
+I need a comprehensive analysis of my currently starred repositories.
+1. First, find the top 20 repositories I have starred with more than 5000 stars in total
 2. For each of these repositories, analyze their recent activity
 3. Provide a summary of which framework seems to be most actively maintained
 """
