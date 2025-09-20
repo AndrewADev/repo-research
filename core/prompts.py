@@ -6,10 +6,10 @@ comprehensive_analysis=ThreadedPrompt(
 I need a comprehensive analysis of my currently starred repositories.
 1. First, find the top 20 repositories I have starred with more than 5000 stars in total
 2. For each of these repositories, analyze their recent activity
-3. Provide a summary of which framework seems to be most actively maintained
+3. Provide a summary of which project seems to be most actively maintained
 """,
   follow_ups=[
-    "Which of these frameworks has the most active community?"
+    "Which of these project has the most active community?"
   ]
 
 )
