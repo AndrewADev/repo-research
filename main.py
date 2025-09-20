@@ -1,11 +1,10 @@
-import argparse
 import os
 from dotenv import load_dotenv
 
 from core.models import ThreadedPrompt
 from tools.github_adapter import create_graph
 from core.prompts import comprehensive_analysis, run_diagnostic
-
+import typer
 
 # Load environment variables
 load_dotenv()
@@ -33,6 +32,8 @@ config = {"configurable": {"thread_id": "example_chat"}}
 # 2. For each of these repositories, analyze their recent activity
 # 3. Provide a summary of which framework seems to be most actively maintained
 # """
+
+app = typer.Typer(rich_markup_mode="rich")
 
 
 def run_prompt(prompt: ThreadedPrompt):
@@ -69,25 +70,17 @@ def run_prompt(prompt: ThreadedPrompt):
                 print(f"Follow-up response: {last_message.content}\n")
 
 
-def main():
-    """Main entry point for the GitHub Agent."""
-    parser = argparse.ArgumentParser(
-        description="Performs various analysis, search, discovery etc. operations against GitHub"
-    )
-    subparsers = parser.add_subparsers(dest="command", help="Available commands")
-
-    subparsers.add_parser(
-        "diagnostics", help="Diagnose issues with the setup"
-    )
-
-    args = parser.parse_args()
+@app.command()
+def diagnostics():
+    """Diagnose issues with the setup"""
+    run_prompt(run_diagnostic)
 
 
-    if args.command == "diagnostics":
-        run_prompt(run_diagnostic)
-    else:
-        run_prompt(comprehensive_analysis)
+@app.command()
+def analyze():
+    """Run comprehensive analysis of starred repositories"""
+    run_prompt(comprehensive_analysis)
 
 
 if __name__ == "__main__":
-    main()
+    app()

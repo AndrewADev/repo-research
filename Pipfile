@@ -12,6 +12,7 @@ langchain-ollama = "*"
 langgraph = "*"
 langgraph-prebuilt = "*"
 pydantic = "*"
+typer = "*"
 
 [dev-packages]
 
