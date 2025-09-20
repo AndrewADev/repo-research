@@ -18,7 +18,8 @@ run_diagnostic=ThreadedPrompt(
   # prompt="Can you help me determine the current rate_limit state of the current token?",
   prompt="""
 I want to run diagnostics on various settings.
-1. Please check the rate limit status of the current token
+1. Please check the validity of the current GitHub token
+2. Please check the rate limit status of the current GitHub token
 """,
   follow_ups=[
     "Have any immediate issues been identified?",

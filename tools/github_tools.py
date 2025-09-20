@@ -270,6 +270,85 @@ class GitHubTools:
         except GithubException as e:
             raise Exception(f"GitHub API error: {str(e)}")
 
+    def validate_token(self) -> Dict:
+        """
+        Validate the GitHub token and return detailed information about it.
+
+        Returns:
+            Dictionary containing token validation status and metadata
+        """
+        try:
+            # Test authentication by getting the authenticated user
+            user = self.github.get_user()
+
+            # Get rate limit information to understand token capabilities
+            rate_limit = self.github.get_rate_limit()
+
+            # Attempt to get token metadata (scopes, etc.)
+            # Note: The GitHub API doesn't expose all token details via REST API
+            # but we can infer some information from successful operations
+
+            validation_data = {
+                "valid": True,
+                "authenticated_user": {
+                    "login": user.login,
+                    "name": user.name,
+                    "type": user.type,
+                    "id": user.id,
+                    "public_repos": user.public_repos,
+                    "followers": user.followers,
+                    "following": user.following
+                },
+                "rate_limits": {
+                    "core": {
+                        "limit": rate_limit.resources.core.limit,
+                        "remaining": rate_limit.resources.core.remaining,
+                        "reset_time": rate_limit.resources.core.reset.strftime("%Y-%m-%d %H:%M:%S UTC")
+                    },
+                    "search": {
+                        "limit": rate_limit.resources.search.limit,
+                        "remaining": rate_limit.resources.search.remaining,
+                        "reset_time": rate_limit.resources.search.reset.strftime("%Y-%m-%d %H:%M:%S UTC")
+                    }
+                },
+                "token_info": {
+                    "can_access_user_data": True,
+                    "can_access_rate_limits": True,
+                    "note": "Token is valid and can access public GitHub resources"
+                }
+            }
+
+            return validation_data
+
+        except GithubException as e:
+            # Token is invalid or has insufficient permissions
+            error_details = {
+                "valid": False,
+                "error": str(e),
+                "error_type": type(e).__name__
+            }
+
+            # Provide more specific error information based on status code
+            if hasattr(e, 'status'):
+                if e.status == 401:
+                    error_details["issue"] = "Invalid token or token has expired"
+                elif e.status == 403:
+                    error_details["issue"] = "Token lacks required permissions or rate limit exceeded"
+                elif e.status == 404:
+                    error_details["issue"] = "Token may be valid but lacks access to requested resources"
+                else:
+                    error_details["issue"] = f"HTTP {e.status} error occurred"
+
+            return error_details
+        except Exception as e:
+            # Unexpected error
+            return {
+                "valid": False,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "issue": "Unexpected error during token validation"
+            }
+
     def close(self) -> None:
         """Close the GitHub connection."""
         self.github.close()

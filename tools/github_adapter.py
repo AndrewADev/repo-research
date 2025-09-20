@@ -11,7 +11,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_ollama import ChatOllama
 from typing import Optional, Type
 
-from tools.github_models import ActivityAnalysisInput, RateLimitInput, SearchRepoInput, StarredRepoInput, GitHubToolState
+from tools.github_models import ActivityAnalysisInput, RateLimitInput, SearchRepoInput, StarredRepoInput, TokenValidationInput, GitHubToolState
 from .github_tools import GitHubTools
 import json
 from functools import wraps
@@ -108,6 +108,24 @@ class RateLimitCheckTool(BaseTool):
         except Exception as e:
             return json.dumps({"error": str(e)})
 
+class TokenValidationTool(BaseTool):
+    name: str = "validate_github_token"
+    description: str = """
+    Validate the GitHub token and return detailed information about its capabilities.
+    Checks if the token is valid, what permissions it has, and provides rate limit status.
+    Useful for debugging authentication issues and understanding token scope.
+    """
+    args_schema: Type[BaseModel] = TokenValidationInput
+
+    @with_github_tools
+    def _run(self, github_tools: Optional[GitHubTools] = None) -> str:
+        """Execute the token validation tool."""
+        try:
+            validation_result = github_tools.validate_token()
+            return json.dumps(validation_result, default=str, indent=2)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
 def _create_llm(provider: str = "ollama",
                anthropic_api_key: Optional[str] = None,
                ollama_base_url: str = "http://localhost:11434",
@@ -192,7 +210,8 @@ def create_graph(provider: str = "ollama",
         StarredRepositoriesTool(),
         RepositorySearchTool(),
         RepositoryActivityTool(),
-        RateLimitCheckTool()
+        RateLimitCheckTool(),
+        TokenValidationTool()
     ]
     
     # Bind tools to the LLM

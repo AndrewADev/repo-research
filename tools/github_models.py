@@ -45,6 +45,10 @@ class RateLimitInput(BaseModel):
     """Input schema for rate limit check tool."""
     pass
 
+class TokenValidationInput(BaseModel):
+    """Input schema for token validation tool."""
+    pass
+
 # Define our graph state
 class GitHubToolState(TypedDict):
     """The state of our GitHub analysis graph."""
