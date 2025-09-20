@@ -39,8 +39,8 @@ class GitHubTools:
     def _handle_rate_limit(self) -> None:
         """Check rate limit and sleep if necessary."""
         rate_limit = self.github.get_rate_limit()
-        if rate_limit.core.remaining < 10:
-            reset_time = rate_limit.core.reset.timestamp() - time.time()
+        if rate_limit.resources.core.remaining < 10:
+            reset_time = rate_limit.resources.core.reset.timestamp() - time.time()
             if reset_time > 0:
                 time.sleep(reset_time)
 

@@ -14,9 +14,11 @@ Requirements:
 
 from langchain.tools import BaseTool
 from langchain_anthropic import ChatAnthropic
+from langchain_ollama import ChatOllama
 from typing import List, Dict, Optional, Literal, Type
 from .github_tools import GitHubTools
 import json
+import os
 from functools import wraps
 from typing import Annotated
 from typing_extensions import TypedDict
@@ -139,19 +141,70 @@ class RepositoryActivityTool(BaseTool):
         except Exception as e:
             return json.dumps({"error": str(e)})
 
-def create_graph(anthropic_api_key: str,
+def _create_llm(provider: str = "ollama",
+               anthropic_api_key: Optional[str] = None,
+               ollama_base_url: str = "http://localhost:11434",
+               model: Optional[str] = None,
+               temperature: float = 0):
+    """
+    Create an LLM instance based on the provider.
+
+    Args:
+        provider: LLM provider ("ollama" or "anthropic")
+        anthropic_api_key: Anthropic API key (required for anthropic provider)
+        ollama_base_url: Ollama server URL
+        model: Model name (defaults based on provider)
+        temperature: Model temperature (0-1)
+
+    Returns:
+        LLM instance
+    """
+    if provider == "ollama":
+        # Use a model with better tool calling support
+        default_model = model or "qwen3:8b"
+        try:
+            return ChatOllama(
+                model=default_model,
+                base_url=ollama_base_url,
+                temperature=temperature,
+            )
+        except Exception as e:
+            if anthropic_api_key:
+                print(f"Warning: Ollama unavailable ({e}), falling back to Anthropic")
+                provider = "anthropic"
+            else:
+                raise Exception(f"Ollama unavailable and no Anthropic API key provided: {e}")
+
+    if provider == "anthropic":
+        if not anthropic_api_key:
+            raise ValueError("Anthropic API key required for anthropic provider")
+        default_model = model or "claude-3-opus-20240229"
+        return ChatAnthropic(
+            temperature=temperature,
+            model=default_model,
+            anthropic_api_key=anthropic_api_key,
+            max_tokens=4096
+        )
+
+    raise ValueError(f"Unsupported provider: {provider}")
+
+def create_graph(provider: str = "ollama",
+                anthropic_api_key: Optional[str] = None,
+                ollama_base_url: str = "http://localhost:11434",
+                model: Optional[str] = None,
                 temperature: float = 0,
-                model: str = "claude-3-opus-20240229",
                 max_steps: int = 5):
     """
-    Create a LangGraph for GitHub analysis with Claude.
-    
+    Create a LangGraph for GitHub analysis with configurable LLM provider.
+
     Args:
-        anthropic_api_key: Anthropic API key
+        provider: LLM provider ("ollama" or "anthropic")
+        anthropic_api_key: Anthropic API key (required for anthropic provider)
+        ollama_base_url: Ollama server URL
+        model: Model name (defaults based on provider)
         temperature: Model temperature (0-1)
-        model: Anthropic model identifier
         max_steps: Maximum number of steps before forcibly ending
-        
+
     Returns:
         Compiled LangGraph ready for execution
     """
@@ -159,11 +212,12 @@ def create_graph(anthropic_api_key: str,
     graph = StateGraph(State)
     
     # Initialize our LLM
-    llm = ChatAnthropic(
-        temperature=temperature,
-        model=model,
+    llm = _create_llm(
+        provider=provider,
         anthropic_api_key=anthropic_api_key,
-        max_tokens=4096
+        ollama_base_url=ollama_base_url,
+        model=model,
+        temperature=temperature
     )
     
     # Create our tools list

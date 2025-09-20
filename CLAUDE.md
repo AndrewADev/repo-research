@@ -10,8 +10,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Create .env file with required tokens:
   ```
   GITHUB_TOKEN=your_github_personal_access_token
+  # LLM Provider Configuration (defaults to ollama)
+  LLM_PROVIDER=ollama  # or "anthropic"
+  # Ollama Configuration (optional, defaults shown)
+  OLLAMA_BASE_URL=http://localhost:11434
+  # Anthropic Configuration (required if using anthropic provider or as fallback)
   ANTHROPIC_API_KEY=your_anthropic_api_key
   ```
+
+### LLM Provider Setup
+
+#### Ollama (Default)
+1. Install Ollama: https://ollama.ai/
+2. Pull a model: `ollama pull qwen3:8b` (or your preferred model -- making sure it supports tool calling)
+3. Start Ollama service: `ollama serve`
+4. The tool will automatically use Ollama with fallback to Anthropic if configured
+
+#### Anthropic Claude
+1. Get API key from https://console.anthropic.com/
+2. Set `LLM_PROVIDER=anthropic` in .env or use as fallback when Ollama unavailable
 
 ### Running the Application
 - Execute main analysis: `python main.py`
@@ -19,7 +36,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture Overview
 
-This is a GitHub analysis tool built with LangGraph, Anthropic's Claude, and the GitHub API. The system follows a modular architecture with clear separation of concerns:
+This is a GitHub analysis tool built with LangGraph, configurable LLM providers (Ollama/Anthropic), and the GitHub API. The system follows a modular architecture with clear separation of concerns:
 
 ### Core Components
 
@@ -38,7 +55,8 @@ This is a GitHub analysis tool built with LangGraph, Anthropic's Claude, and the
    - Defines Pydantic schemas for tool input validation
    - `StarredRepositoriesTool`, `RepositorySearchTool`, `RepositoryActivityTool`
    - Creates and configures the LangGraph state machine
-   - Integrates Claude LLM with GitHub tools using proper tool binding
+   - Supports multiple LLM providers (Ollama, Anthropic) with automatic fallback
+   - Integrates LLMs with GitHub tools using proper tool binding
 
 ### Key Design Patterns
 
@@ -51,7 +69,7 @@ This is a GitHub analysis tool built with LangGraph, Anthropic's Claude, and the
 
 The project uses Pipenv for dependency management with these key libraries:
 - `pygithub` - GitHub API client
-- `langchain` & `langchain-anthropic` - LLM framework and Claude integration
+- `langchain`, `langchain-anthropic`, `langchain-ollama` - LLM framework and provider integrations
 - `langgraph` - State graph execution framework
 - `python-dotenv` - Environment variable management
 - `pydantic` - Data validation and serialization
@@ -60,9 +78,9 @@ The project uses Pipenv for dependency management with these key libraries:
 
 The application follows a conversational AI pattern where:
 1. User provides analysis prompt
-2. LangGraph orchestrates tool calls based on Claude's reasoning
+2. LangGraph orchestrates tool calls based on LLM reasoning (Ollama or Anthropic)
 3. GitHub tools execute API calls with proper authentication
-4. Results are processed and fed back to Claude for synthesis
+4. Results are processed and fed back to the LLM for synthesis
 5. Final analysis is streamed back to the user
 
-This architecture enables complex multi-step GitHub analysis workflows while maintaining conversation context and tool state.
+This architecture enables complex multi-step GitHub analysis workflows while maintaining conversation context and tool state. The flexible LLM provider system allows users to choose between local Ollama models for privacy or cloud-based Anthropic models for performance.

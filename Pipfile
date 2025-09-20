@@ -8,7 +8,9 @@ pygithub = "*"
 python-dotenv = "*"
 langchain = "*"
 langchain-anthropic = "*"
+langchain-ollama = "*"
 langgraph = "*"
+langgraph-prebuilt = "*"
 
 [dev-packages]
 
