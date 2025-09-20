@@ -15,11 +15,13 @@ from tools.github_models import ActivityAnalysisInput, RateLimitInput, SearchRep
 from .github_tools import GitHubTools
 import json
 from functools import wraps
-from langgraph.graph import StateGraph, START
+from langgraph.graph import StateGraph, START, END
 
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.checkpoint.memory import MemorySaver
 from pydantic import BaseModel
+from langchain_core.messages import AIMessage
+from typing import Optional
 
 
 def with_github_tools(func):
@@ -32,6 +34,7 @@ def with_github_tools(func):
         finally:
             github_tools.close()
     return wrapper
+
 
 class StarredRepositoriesTool(BaseTool):
     name: str = "get_starred_repositories"
@@ -125,6 +128,71 @@ class TokenValidationTool(BaseTool):
             return json.dumps(validation_result, default=str, indent=2)
         except Exception as e:
             return json.dumps({"error": str(e)})
+
+def error_detection_condition(state: GitHubToolState) -> str:
+    """Simple error detection - when error, run diagnostics."""
+    messages = state.get("messages", [])
+    if not messages:
+        return "continue"
+
+    last_message = messages[-1]
+    if hasattr(last_message, 'content') and last_message.content:
+        content = last_message.content.lower()
+        if "error" in content:
+            return "run_diagnostics"
+
+    return "continue"
+
+def run_diagnostics_node(state: GitHubToolState):
+    """Run the existing diagnostic workflow."""
+    from core.prompts import run_diagnostic
+
+    diagnostic_message = AIMessage(content=(
+        "🔍 **Error Detected - Running Diagnostics**\n\n"
+        f"{run_diagnostic.prompt}"
+        "Are we able to continue our task?"
+    ))
+
+    return {
+        "messages": [diagnostic_message],
+        "diagnostic_ran": True
+    }
+
+def can_continue_condition(state: GitHubToolState) -> str:
+    """Check if we can continue after diagnostics based on LLM response."""
+    messages = state.get("messages", [])
+    if not messages:
+        return "continue"
+
+    # Look for the LLM's response to the diagnostic prompt
+    # Check if the latest message indicates we should stop
+    last_message = messages[-1]
+    if hasattr(last_message, 'content') and last_message.content:
+        content = last_message.content.lower()
+
+        # Look for negative responses to "Are we able to continue our task?"
+        stop_indicators = [
+            "no", "not able", "cannot continue", "unable to continue",
+            "should stop", "cannot proceed", "not possible", "blocked",
+            "failed", "critical error", "cannot resolve"
+        ]
+
+        if any(indicator in content for indicator in stop_indicators):
+            return "stop"
+
+    return "continue"
+
+def diagnostic_stop_node(state: GitHubToolState):
+    """Node that provides a clear stop message for main.py to detect."""
+    stop_message = AIMessage(content=(
+        "⚠️ **Execution Stopped Due to Diagnostics**\n\n"
+        "Diagnostics indicate we cannot continue. Stopping execution to prevent further issues."
+    ))
+
+    return {
+        "messages": [stop_message],
+        "execution_stopped": True
+    }
 
 def _create_llm(provider: str = "ollama",
                anthropic_api_key: Optional[str] = None,
@@ -236,19 +304,40 @@ def create_graph(provider: str = "ollama",
     # Add nodes to graph
     graph.add_node("chatbot", chatbot)
     graph.add_node("tools", tool_node)
-    
-    # Add conditional edges
+    graph.add_node("run_diagnostics", run_diagnostics_node)
+    graph.add_node("diagnostic_stop", diagnostic_stop_node)
+
+    # Add conditional edges from chatbot
     graph.add_conditional_edges(
         "chatbot",
         tools_condition,
         {
             "tools": "tools",  # If tools needed, go to tools node
-            "__end__": "__end__"  # Otherwise end
+            END: END  # Otherwise end
         }
     )
-    
-    # Add remaining edges
-    graph.add_edge("tools", "chatbot")
+
+    graph.add_conditional_edges(
+        "tools",
+        error_detection_condition,
+        {
+            "run_diagnostics": "run_diagnostics",
+            "continue": "chatbot"  # Normal flow continues to chatbot
+        }
+    )
+
+    # Add conditional edge from diagnostics (check if we can continue)
+    graph.add_conditional_edges(
+        "run_diagnostics",
+        can_continue_condition,
+        {
+            "continue": "chatbot",
+            "stop": "diagnostic_stop"
+        }
+    )
+
+    # Add edge from diagnostic stop to end
+    graph.add_edge("diagnostic_stop", END)
     graph.add_edge(START, "chatbot")
     
     # Set up checkpointing

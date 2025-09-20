@@ -45,29 +45,40 @@ def run_prompt(prompt: ThreadedPrompt):
             config,
             stream_mode="values"
         )
-        
+
+        # Track if we hit a diagnostic stop condition
+        diagnostic_stopped = False
+
         # Print each event as it occurs
         for event in events:
             if "messages" in event:
                 last_message = event["messages"][-1]
                 print(f"Step output: {last_message.content}\n")
-                
+
+                # Check if this was a diagnostic stop message
+                if hasattr(last_message, 'content') and "Execution Stopped Due to Diagnostics" in last_message.content:
+                    diagnostic_stopped = True
+
     except Exception as e:
         print(f"Error during analysis: {str(e)}")
-        
+        diagnostic_stopped = True
 
-    for follow_up in prompt.follow_ups:
+    # Only run follow-ups if we didn't stop due to diagnostics
+    if not diagnostic_stopped:
+        for follow_up in prompt.follow_ups:
 
-        events = graph.stream(
-            {"messages": [("user", follow_up)]},
-            config,
-            stream_mode="values"
-        )
+            events = graph.stream(
+                {"messages": [("user", follow_up)]},
+                config,
+                stream_mode="values"
+            )
 
-        for event in events:
-            if "messages" in event:
-                last_message = event["messages"][-1]
-                print(f"Follow-up response: {last_message.content}\n")
+            for event in events:
+                if "messages" in event:
+                    last_message = event["messages"][-1]
+                    print(f"Follow-up response: {last_message.content}\n")
+    else:
+        print("⚠️ Skipping follow-up prompts due to diagnostic stop condition.")
 
 
 @app.command()
