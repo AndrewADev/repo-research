@@ -1,8 +1,10 @@
+import argparse
 import os
 from dotenv import load_dotenv
 
+from core.models import ThreadedPrompt
 from tools.github_adapter import create_graph
-
+from core.prompts import comprehensive_analysis, run_diagnostic
 
 
 # Load environment variables
@@ -32,41 +34,60 @@ config = {"configurable": {"thread_id": "example_chat"}}
 # 3. Provide a summary of which framework seems to be most actively maintained
 # """
 
-analysis_prompt = """
-I need a comprehensive analysis of my currently starred repositories.
-1. First, find the top 20 repositories I have starred with more than 5000 stars in total
-2. For each of these repositories, analyze their recent activity
-3. Provide a summary of which framework seems to be most actively maintained
-"""
 
-# Run the analysis
-try:
-    # Initialize with our first message
-    events = graph.stream(
-        {"messages": [("user", analysis_prompt)]},
-        config,
-        stream_mode="values"
+def run_prompt(prompt: ThreadedPrompt):
+    # Run the analysis
+    try:
+        # Initialize with our first message
+        events = graph.stream(
+            {"messages": [("user", prompt.prompt)]},
+            config,
+            stream_mode="values"
+        )
+        
+        # Print each event as it occurs
+        for event in events:
+            if "messages" in event:
+                last_message = event["messages"][-1]
+                print(f"Step output: {last_message.content}\n")
+                
+    except Exception as e:
+        print(f"Error during analysis: {str(e)}")
+        
+
+    for follow_up in prompt.follow_ups:
+
+        events = graph.stream(
+            {"messages": [("user", follow_up)]},
+            config,
+            stream_mode="values"
+        )
+
+        for event in events:
+            if "messages" in event:
+                last_message = event["messages"][-1]
+                print(f"Follow-up response: {last_message.content}\n")
+
+
+def main():
+    """Main entry point for the GitHub Agent."""
+    parser = argparse.ArgumentParser(
+        description="Performs various analysis, search, discovery etc. operations against GitHub"
     )
-    
-    # Print each event as it occurs
-    for event in events:
-        if "messages" in event:
-            last_message = event["messages"][-1]
-            print(f"Step output: {last_message.content}\n")
-            
-except Exception as e:
-    print(f"Error during analysis: {str(e)}")
-    
-# We can continue the conversation by streaming again with new input
-follow_up = "Which of these frameworks has the most active community?"
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
 
-events = graph.stream(
-    {"messages": [("user", follow_up)]},
-    config,
-    stream_mode="values"
-)
+    subparsers.add_parser(
+        "diagnostics", help="Diagnose issues with the setup"
+    )
 
-for event in events:
-    if "messages" in event:
-        last_message = event["messages"][-1]
-        print(f"Follow-up response: {last_message.content}\n")
+    args = parser.parse_args()
+
+
+    if args.command == "diagnostics":
+        run_prompt(run_diagnostic)
+    else:
+        run_prompt(comprehensive_analysis)
+
+
+if __name__ == "__main__":
+    main()

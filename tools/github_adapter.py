@@ -4,21 +4,14 @@ LangChain GitHub Tools Integration with Anthropic's Claude and Pydantic schemas.
 This module integrates GitHub tools with LangGraph's framework, using proper Pydantic
 models for input validation and schema generation.
 
-Requirements:
-    - langchain
-    - langchain-anthropic
-    - python-dotenv
-    - PyGithub
-    - pydantic >= 2.0
 """
 
 from langchain.tools import BaseTool
 from langchain_anthropic import ChatAnthropic
 from langchain_ollama import ChatOllama
-from typing import List, Dict, Optional, Literal, Type
+from typing import Optional, Literal, Type
 from .github_tools import GitHubTools
 import json
-import os
 from functools import wraps
 from typing import Annotated
 from typing_extensions import TypedDict
@@ -63,6 +56,10 @@ class ActivityAnalysisInput(BaseModel):
         ...,
         description="Full repository name (e.g., 'username/repo')"
     )
+
+class RateLimitInput(BaseModel):
+    """Input schema for rate limit check tool."""
+    pass
 
 # Define our graph state
 class State(TypedDict):
@@ -130,14 +127,32 @@ class RepositoryActivityTool(BaseTool):
     Useful for understanding how active and maintained a repository is.
     """
     args_schema: Type[BaseModel] = ActivityAnalysisInput
-    
+
     @with_github_tools
-    def _run(self, repo_full_name: str, 
+    def _run(self, repo_full_name: str,
              github_tools: Optional[GitHubTools] = None) -> str:
         """Execute the repository activity analysis tool."""
         try:
             activity = github_tools.analyze_repository_activity(repo_full_name)
             return json.dumps(activity, default=str, indent=2)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+class RateLimitCheckTool(BaseTool):
+    name: str = "check_rate_limit_status"
+    description: str = """
+    Check the current GitHub API rate limit status for the configured token.
+    Shows remaining requests and reset times for core API, search API, and GraphQL API.
+    Useful for understanding API quota usage and planning API calls.
+    """
+    args_schema: Type[BaseModel] = RateLimitInput
+
+    @with_github_tools
+    def _run(self, github_tools: Optional[GitHubTools] = None) -> str:
+        """Execute the rate limit check tool."""
+        try:
+            status = github_tools.check_rate_limit_status()
+            return json.dumps(status, default=str, indent=2)
         except Exception as e:
             return json.dumps({"error": str(e)})
 
@@ -224,7 +239,8 @@ def create_graph(provider: str = "ollama",
     tools = [
         StarredRepositoriesTool(),
         RepositorySearchTool(),
-        RepositoryActivityTool()
+        RepositoryActivityTool(),
+        RateLimitCheckTool()
     ]
     
     # Bind tools to the LLM

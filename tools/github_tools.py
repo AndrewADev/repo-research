@@ -225,6 +225,51 @@ class GitHubTools:
         except GithubException as e:
             raise Exception(f"GitHub API error: {str(e)}")
 
+    def check_rate_limit_status(self) -> Dict:
+        """
+        Check the current rate limit status for the configured token.
+
+        Returns:
+            Dictionary containing rate limit information for all endpoints
+        """
+        try:
+            rate_limit = self.github.get_rate_limit()
+
+            # Core rate limit (most API calls)
+            core = rate_limit.resources.core
+
+            # Search rate limit (search API calls)
+            search = rate_limit.resources.search
+
+            # GraphQL rate limit
+            graphql = rate_limit.resources.graphql
+
+            status = {
+                "core": {
+                    "limit": core.limit,
+                    "remaining": core.remaining,
+                    "reset_time": core.reset.strftime("%Y-%m-%d %H:%M:%S UTC"),
+                    "reset_timestamp": core.reset.timestamp()
+                },
+                "search": {
+                    "limit": search.limit,
+                    "remaining": search.remaining,
+                    "reset_time": search.reset.strftime("%Y-%m-%d %H:%M:%S UTC"),
+                    "reset_timestamp": search.reset.timestamp()
+                },
+                "graphql": {
+                    "limit": graphql.limit,
+                    "remaining": graphql.remaining,
+                    "reset_time": graphql.reset.strftime("%Y-%m-%d %H:%M:%S UTC"),
+                    "reset_timestamp": graphql.reset.timestamp()
+                }
+            }
+
+            return status
+
+        except GithubException as e:
+            raise Exception(f"GitHub API error: {str(e)}")
+
     def close(self) -> None:
         """Close the GitHub connection."""
         self.github.close()

@@ -11,6 +11,7 @@ langchain-anthropic = "*"
 langchain-ollama = "*"
 langgraph = "*"
 langgraph-prebuilt = "*"
+pydantic = "*"
 
 [dev-packages]
 
