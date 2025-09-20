@@ -12,12 +12,14 @@ load_dotenv()
 provider = os.getenv("LLM_PROVIDER", "ollama")  # Default to ollama
 anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
 ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+model_name = os.getenv("MODEL_NAME", None)
 
 # Create the graph
 graph = create_graph(
     provider=provider,
     anthropic_api_key=anthropic_api_key,
-    ollama_base_url=ollama_base_url
+    ollama_base_url=ollama_base_url,
+    model=model_name
 )
 
 # Configure the execution
