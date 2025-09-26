@@ -1,6 +1,5 @@
 from core.models import ThreadedPrompt
 
-
 comprehensive_analysis = ThreadedPrompt(
     prompt="""
 I need a comprehensive analysis of my currently starred repositories.
@@ -12,7 +11,6 @@ I need a comprehensive analysis of my currently starred repositories.
 )
 
 run_diagnostic = ThreadedPrompt(
-    # prompt="Can you help me determine the current rate_limit state of the current token?",
     prompt="""
 I want to run diagnostics on various settings.
 1. Please check the validity of the current GitHub token
