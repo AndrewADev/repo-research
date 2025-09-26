@@ -1,10 +1,11 @@
 import os
+
+import typer
 from dotenv import load_dotenv
 
 from core.models import ThreadedPrompt
-from tools.github_adapter import create_graph
 from core.prompts import comprehensive_analysis, run_diagnostic
-import typer
+from tools.github_adapter import create_graph
 
 # Load environment variables
 load_dotenv()

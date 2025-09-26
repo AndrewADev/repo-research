@@ -1,14 +1,14 @@
-from typing import Annotated, Literal, Optional, TypedDict
-from pydantic import BaseModel, Field
+from typing import Annotated, Literal, TypedDict
 
 from langgraph.graph.message import add_messages
+from pydantic import BaseModel, Field
 
 
 # Define input schemas for our tools
 class StarredRepoInput(BaseModel):
     """Input schema for starred repositories tool."""
 
-    username: Optional[str] = Field(
+    username: str | None = Field(
         None, description="GitHub username. If not provided, uses authenticated user"
     )
     sort_by: Literal["stars", "recent", "issues"] = Field(

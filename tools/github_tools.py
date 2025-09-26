@@ -2,29 +2,30 @@
 GitHub API Tool Methods for AI Agents
 
 This module provides a collection of functions for interacting with GitHub's API,
-specifically designed to be used as tools by an AI agent. Each function is self-contained
-and handles its own error checking and rate limiting.
+specifically designed to be used as tools by an AI agent. Each function is
+self-contained and handles its own error checking and rate limiting.
 
 Requirements:
     - PyGithub
     - python-dotenv
 """
 
-from github import Github, Auth, GithubException, RateLimitExceededException
-from typing import List, Dict, Optional
-from datetime import datetime
-import time
 import os
+import time
+from datetime import datetime
+
 from dotenv import load_dotenv
+from github import Auth, Github, GithubException
 
 
 class GitHubTools:
-    def __init__(self, token: Optional[str] = None):
+    def __init__(self, token: str | None = None):
         """
         Initialize GitHub tools with authentication.
 
         Args:
-            token: GitHub personal access token. If None, will try to load from environment.
+            token: GitHub personal access token. If None, will try to load
+              from environment.
         """
         # Load environment variables if token not provided
         if token is None:
@@ -46,8 +47,8 @@ class GitHubTools:
                 time.sleep(reset_time)
 
     def get_starred_repositories(
-        self, username: Optional[str] = None, sort_by: str = "stars"
-    ) -> List[Dict]:
+        self, username: str | None = None, sort_by: str = "stars"
+    ) -> list[dict]:
         """
         Retrieve and sort starred repositories for a user.
 
@@ -99,12 +100,10 @@ class GitHubTools:
 
             return starred_repos
 
-        except RateLimitExceededException:
-            raise Exception("GitHub API rate limit exceeded. Please try again later.")
         except GithubException as e:
-            raise Exception(f"GitHub API error: {str(e)}")
+            raise Exception(f"GitHub API error: {str(e)}") from e
 
-    def analyze_repository_activity(self, repo_full_name: str) -> Dict:
+    def analyze_repository_activity(self, repo_full_name: str) -> dict:
         """
         Analyze recent activity in a repository.
 
@@ -145,14 +144,12 @@ class GitHubTools:
 
             return activity_data
 
-        except RateLimitExceededException:
-            raise Exception("GitHub API rate limit exceeded. Please try again later.")
         except GithubException as e:
-            raise Exception(f"GitHub API error: {str(e)}")
+            raise Exception(f"GitHub API error: {str(e)}") from e
 
     def search_repositories(
-        self, query: str, sort: Optional[str] = "stars", limit: int = 10
-    ) -> List[Dict]:
+        self, query: str, sort: str | None = "stars", limit: int = 10
+    ) -> list[dict]:
         """
         Search for repositories matching criteria.
 
@@ -184,12 +181,10 @@ class GitHubTools:
 
             return results
 
-        except RateLimitExceededException:
-            raise Exception("GitHub API rate limit exceeded. Please try again later.")
         except GithubException as e:
-            raise Exception(f"GitHub API error: {str(e)}")
+            raise Exception(f"GitHub API error: {str(e)}") from e
 
-    def get_user_profile(self, username: Optional[str] = None) -> Dict:
+    def get_user_profile(self, username: str | None = None) -> dict:
         """
         Get detailed information about a GitHub user.
 
@@ -222,12 +217,10 @@ class GitHubTools:
 
             return profile_data
 
-        except RateLimitExceededException:
-            raise Exception("GitHub API rate limit exceeded. Please try again later.")
         except GithubException as e:
-            raise Exception(f"GitHub API error: {str(e)}")
+            raise Exception(f"GitHub API error: {str(e)}") from e
 
-    def check_rate_limit_status(self) -> Dict:
+    def check_rate_limit_status(self) -> dict:
         """
         Check the current rate limit status for the configured token.
 
@@ -270,9 +263,9 @@ class GitHubTools:
             return status
 
         except GithubException as e:
-            raise Exception(f"GitHub API error: {str(e)}")
+            raise Exception(f"GitHub API error: {str(e)}") from e
 
-    def validate_token(self) -> Dict:
+    def validate_token(self) -> dict:
         """
         Validate the GitHub token and return detailed information about it.
 

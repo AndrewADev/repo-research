@@ -133,8 +133,9 @@ class TokenValidationTool(BaseTool):
     name: str = "validate_github_token"
     description: str = """
     Validate the GitHub token and return detailed information about its capabilities.
-    Checks if the token is valid, what permissions it has, and provides rate limit status.
-    Useful for debugging authentication issues and understanding token scope.
+    Checks if the token is valid, what permissions it has, and provides rate
+    limit status. Useful for debugging authentication issues and understanding
+    token scope.
     """
     args_schema: type[BaseModel] = TokenValidationInput
 
@@ -216,7 +217,8 @@ def diagnostic_stop_node(state: GitHubToolState):
     stop_message = AIMessage(
         content=(
             "⚠️ **Execution Stopped Due to Diagnostics**\n\n"
-            "Diagnostics indicate we cannot continue. Stopping execution to prevent further issues."
+            "Diagnostics indicate we cannot continue."
+            "Stopping execution to prevent further issues."
         )
     )
 
@@ -259,7 +261,7 @@ def _create_llm(
             else:
                 raise Exception(
                     f"Ollama unavailable and no Anthropic API key provided: {e}"
-                )
+                ) from e
 
     if provider == "anthropic":
         if not anthropic_api_key:
