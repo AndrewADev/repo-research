@@ -20,7 +20,7 @@ graph = create_graph(
     provider=provider,
     anthropic_api_key=anthropic_api_key,
     ollama_base_url=ollama_base_url,
-    model=model_name
+    model=model_name,
 )
 
 # Configure the execution
@@ -41,9 +41,7 @@ def run_prompt(prompt: ThreadedPrompt):
     try:
         # Initialize with our first message
         events = graph.stream(
-            {"messages": [("user", prompt.prompt)]},
-            config,
-            stream_mode="values"
+            {"messages": [("user", prompt.prompt)]}, config, stream_mode="values"
         )
 
         # Track if we hit a diagnostic stop condition
@@ -56,7 +54,10 @@ def run_prompt(prompt: ThreadedPrompt):
                 print(f"Step output: {last_message.content}\n")
 
                 # Check if this was a diagnostic stop message
-                if hasattr(last_message, 'content') and "Execution Stopped Due to Diagnostics" in last_message.content:
+                if (
+                    hasattr(last_message, "content")
+                    and "Execution Stopped Due to Diagnostics" in last_message.content
+                ):
                     diagnostic_stopped = True
 
     except Exception as e:
@@ -66,11 +67,8 @@ def run_prompt(prompt: ThreadedPrompt):
     # Only run follow-ups if we didn't stop due to diagnostics
     if not diagnostic_stopped:
         for follow_up in prompt.follow_ups:
-
             events = graph.stream(
-                {"messages": [("user", follow_up)]},
-                config,
-                stream_mode="values"
+                {"messages": [("user", follow_up)]}, config, stream_mode="values"
             )
 
             for event in events:

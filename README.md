@@ -1,5 +1,7 @@
 
-## GitHub Tools
+# GitHub Tools
+
+## Usage
 
 ### Example usage
 
@@ -23,3 +25,20 @@ if __name__ == "__main__":
         # Always close the connection
         github_tools.close()
 ```
+
+
+## Development
+
+### Setup
+
+Install all dependencies including dev tools with:
+```
+uv sync --dev
+```
+
+
+### Linting & formatting
+Linting and formatting available via:
+- `uv run ruff check` - Run linting checks
+- `uv run ruff format` - Format code
+- `uv run ruff check --fix` - Auto-fix linting issues

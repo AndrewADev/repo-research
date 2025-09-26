@@ -5,8 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Development Commands
 
 ### Environment Setup
-- Install dependencies: `pipenv install`
-- Activate virtual environment: `pipenv shell`
+- Install dependencies: `uv sync`
+- Install with dev dependencies: `uv sync --dev`
 - Create .env file with required tokens:
   ```
   GITHUB_TOKEN=your_github_personal_access_token
@@ -31,7 +31,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 2. Set `LLM_PROVIDER=anthropic` in .env or use as fallback when Ollama unavailable
 
 ### Running the Application
-- Execute main analysis: `python main.py`
+- Execute main analysis: `uv run python agent.py`
+- Available commands: `uv run python agent.py --help`
 - The application runs predefined GitHub analysis workflows using LangGraph
 
 ## Architecture Overview
@@ -40,7 +41,7 @@ This is a GitHub analysis tool built with LangGraph, configurable LLM providers 
 
 ### Core Components
 
-1. **main.py** - Entry point that orchestrates the GitHub analysis workflow
+1. **agent.py** - Entry point that orchestrates the GitHub analysis workflow
    - Creates and configures the LangGraph execution graph
    - Defines analysis prompts for repository analysis
    - Handles streaming responses and conversation flow
@@ -67,7 +68,7 @@ This is a GitHub analysis tool built with LangGraph, configurable LLM providers 
 
 ### Dependencies
 
-The project uses Pipenv for dependency management with these key libraries:
+The project uses uv for dependency management with these key libraries:
 - `pygithub` - GitHub API client
 - `langchain`, `langchain-anthropic`, `langchain-ollama` - LLM framework and provider integrations
 - `langgraph` - State graph execution framework
@@ -84,3 +85,16 @@ The application follows a conversational AI pattern where:
 5. Final analysis is streamed back to the user
 
 This architecture enables complex multi-step GitHub analysis workflows while maintaining conversation context and tool state. The flexible LLM provider system allows users to choose between local Ollama models for privacy or cloud-based Anthropic models for performance.
+
+### Development Tools
+
+The project includes modern development tooling:
+- **uv**: Fast Python package manager for dependency management
+- **ruff**: Integrated linting, formatting, and import sorting
+- **pyproject.toml**: Modern Python project configuration
+
+Available development commands:
+- `uv sync --dev` - Install all dependencies including dev tools
+- `uv run ruff check` - Run linting checks
+- `uv run ruff format` - Format code
+- `uv run ruff check --fix` - Auto-fix linting issues

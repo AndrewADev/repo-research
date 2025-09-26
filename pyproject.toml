@@ -1,0 +1,53 @@
+[project]
+name = "github-agent"
+version = "0.1.0"
+description = "GitHub analysis tool built with LangGraph and configurable LLM providers"
+readme = "README.md"
+authors = [
+    { name = "Andrew A", email = "AndrewADev@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "pygithub",
+    "python-dotenv",
+    "langchain",
+    "langchain-anthropic",
+    "langchain-ollama",
+    "langgraph",
+    "langgraph-prebuilt",
+    "pydantic",
+    "typer",
+]
+
+
+[project.optional-dependencies]
+dev = [
+    "ruff",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["tools", "core"]
+
+[build-system]
+requires = ["uv_build>=0.8.19,<0.9.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.13.2",
+]

@@ -6,26 +6,33 @@ models for input validation and schema generation.
 
 """
 
-from langchain.tools import BaseTool
-from langchain_anthropic import ChatAnthropic
-from langchain_ollama import ChatOllama
-from typing import Optional, Type
-
-from tools.github_models import ActivityAnalysisInput, RateLimitInput, SearchRepoInput, StarredRepoInput, TokenValidationInput, GitHubToolState
-from .github_tools import GitHubTools
 import json
 from functools import wraps
-from langgraph.graph import StateGraph, START, END
 
-from langgraph.prebuilt import ToolNode, tools_condition
-from langgraph.checkpoint.memory import MemorySaver
-from pydantic import BaseModel
+from langchain.tools import BaseTool
+from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import AIMessage
-from typing import Optional
+from langchain_ollama import ChatOllama
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, START, StateGraph
+from langgraph.prebuilt import ToolNode, tools_condition
+from pydantic import BaseModel
+
+from tools.github_models import (
+    ActivityAnalysisInput,
+    GitHubToolState,
+    RateLimitInput,
+    SearchRepoInput,
+    StarredRepoInput,
+    TokenValidationInput,
+)
+
+from .github_tools import GitHubTools
 
 
 def with_github_tools(func):
     """Decorator to handle GitHub tool lifecycle."""
+
     @wraps(func)
     def wrapper(*args, **kwargs):
         github_tools = GitHubTools()
@@ -33,6 +40,7 @@ def with_github_tools(func):
             return func(*args, **kwargs, github_tools=github_tools)
         finally:
             github_tools.close()
+
     return wrapper
 
 
@@ -42,12 +50,15 @@ class StarredRepositoriesTool(BaseTool):
     Retrieve and analyze repositories starred by a GitHub user.
     Useful for discovering popular repositories and understanding a user's interests.
     """
-    args_schema: Type[BaseModel] = StarredRepoInput
-    
+    args_schema: type[BaseModel] = StarredRepoInput
+
     @with_github_tools
-    def _run(self, username: Optional[str] = None, 
-             sort_by: str = "stars", 
-             github_tools: Optional[GitHubTools] = None) -> str:
+    def _run(
+        self,
+        username: str | None = None,
+        sort_by: str = "stars",
+        github_tools: GitHubTools | None = None,
+    ) -> str:
         """Execute the starred repositories tool."""
         try:
             repos = github_tools.get_starred_repositories(username, sort_by)
@@ -55,24 +66,30 @@ class StarredRepositoriesTool(BaseTool):
         except Exception as e:
             return json.dumps({"error": str(e)})
 
+
 class RepositorySearchTool(BaseTool):
     name: str = "search_repositories"
     description: str = """
     Search for GitHub repositories matching specific criteria.
     Useful for finding repositories based on language, stars, topics, etc.
     """
-    args_schema: Type[BaseModel] = SearchRepoInput
-    
+    args_schema: type[BaseModel] = SearchRepoInput
+
     @with_github_tools
-    def _run(self, query: str, sort: str = "stars", 
-             limit: int = 10, 
-             github_tools: Optional[GitHubTools] = None) -> str:
+    def _run(
+        self,
+        query: str,
+        sort: str = "stars",
+        limit: int = 10,
+        github_tools: GitHubTools | None = None,
+    ) -> str:
         """Execute the repository search tool."""
         try:
             results = github_tools.search_repositories(query, sort, limit)
             return json.dumps(results, default=str, indent=2)
         except Exception as e:
             return json.dumps({"error": str(e)})
+
 
 # @tool(args_schema=ActivityAnalysisInput)
 class RepositoryActivityTool(BaseTool):
@@ -81,17 +98,17 @@ class RepositoryActivityTool(BaseTool):
     Analyze recent activity in a GitHub repository.
     Useful for understanding how active and maintained a repository is.
     """
-    args_schema: Type[BaseModel] = ActivityAnalysisInput
+    args_schema: type[BaseModel] = ActivityAnalysisInput
 
     @with_github_tools
-    def _run(self, repo_full_name: str,
-             github_tools: Optional[GitHubTools] = None) -> str:
+    def _run(self, repo_full_name: str, github_tools: GitHubTools | None = None) -> str:
         """Execute the repository activity analysis tool."""
         try:
             activity = github_tools.analyze_repository_activity(repo_full_name)
             return json.dumps(activity, default=str, indent=2)
         except Exception as e:
             return json.dumps({"error": str(e)})
+
 
 class RateLimitCheckTool(BaseTool):
     name: str = "check_rate_limit_status"
@@ -100,16 +117,17 @@ class RateLimitCheckTool(BaseTool):
     Shows remaining requests and reset times for core API, search API, and GraphQL API.
     Useful for understanding API quota usage and planning API calls.
     """
-    args_schema: Type[BaseModel] = RateLimitInput
+    args_schema: type[BaseModel] = RateLimitInput
 
     @with_github_tools
-    def _run(self, github_tools: Optional[GitHubTools] = None) -> str:
+    def _run(self, github_tools: GitHubTools | None = None) -> str:
         """Execute the rate limit check tool."""
         try:
             status = github_tools.check_rate_limit_status()
             return json.dumps(status, default=str, indent=2)
         except Exception as e:
             return json.dumps({"error": str(e)})
+
 
 class TokenValidationTool(BaseTool):
     name: str = "validate_github_token"
@@ -118,16 +136,17 @@ class TokenValidationTool(BaseTool):
     Checks if the token is valid, what permissions it has, and provides rate limit status.
     Useful for debugging authentication issues and understanding token scope.
     """
-    args_schema: Type[BaseModel] = TokenValidationInput
+    args_schema: type[BaseModel] = TokenValidationInput
 
     @with_github_tools
-    def _run(self, github_tools: Optional[GitHubTools] = None) -> str:
+    def _run(self, github_tools: GitHubTools | None = None) -> str:
         """Execute the token validation tool."""
         try:
             validation_result = github_tools.validate_token()
             return json.dumps(validation_result, default=str, indent=2)
         except Exception as e:
             return json.dumps({"error": str(e)})
+
 
 def error_detection_condition(state: GitHubToolState) -> str:
     """Simple error detection - when error, run diagnostics."""
@@ -136,27 +155,28 @@ def error_detection_condition(state: GitHubToolState) -> str:
         return "continue"
 
     last_message = messages[-1]
-    if hasattr(last_message, 'content') and last_message.content:
+    if hasattr(last_message, "content") and last_message.content:
         content = last_message.content.lower()
         if "error" in content:
             return "run_diagnostics"
 
     return "continue"
 
+
 def run_diagnostics_node(state: GitHubToolState):
     """Run the existing diagnostic workflow."""
     from core.prompts import run_diagnostic
 
-    diagnostic_message = AIMessage(content=(
-        "🔍 **Error Detected - Running Diagnostics**\n\n"
-        f"{run_diagnostic.prompt}"
-        "Are we able to continue our task?"
-    ))
+    diagnostic_message = AIMessage(
+        content=(
+            "🔍 **Error Detected - Running Diagnostics**\n\n"
+            f"{run_diagnostic.prompt}"
+            "Are we able to continue our task?"
+        )
+    )
 
-    return {
-        "messages": [diagnostic_message],
-        "diagnostic_ran": True
-    }
+    return {"messages": [diagnostic_message], "diagnostic_ran": True}
+
 
 def can_continue_condition(state: GitHubToolState) -> str:
     """Check if we can continue after diagnostics based on LLM response."""
@@ -167,14 +187,22 @@ def can_continue_condition(state: GitHubToolState) -> str:
     # Look for the LLM's response to the diagnostic prompt
     # Check if the latest message indicates we should stop
     last_message = messages[-1]
-    if hasattr(last_message, 'content') and last_message.content:
+    if hasattr(last_message, "content") and last_message.content:
         content = last_message.content.lower()
 
         # Look for negative responses to "Are we able to continue our task?"
         stop_indicators = [
-            "no", "not able", "cannot continue", "unable to continue",
-            "should stop", "cannot proceed", "not possible", "blocked",
-            "failed", "critical error", "cannot resolve"
+            "no",
+            "not able",
+            "cannot continue",
+            "unable to continue",
+            "should stop",
+            "cannot proceed",
+            "not possible",
+            "blocked",
+            "failed",
+            "critical error",
+            "cannot resolve",
         ]
 
         if any(indicator in content for indicator in stop_indicators):
@@ -182,23 +210,26 @@ def can_continue_condition(state: GitHubToolState) -> str:
 
     return "continue"
 
+
 def diagnostic_stop_node(state: GitHubToolState):
     """Node that provides a clear stop message for main.py to detect."""
-    stop_message = AIMessage(content=(
-        "⚠️ **Execution Stopped Due to Diagnostics**\n\n"
-        "Diagnostics indicate we cannot continue. Stopping execution to prevent further issues."
-    ))
+    stop_message = AIMessage(
+        content=(
+            "⚠️ **Execution Stopped Due to Diagnostics**\n\n"
+            "Diagnostics indicate we cannot continue. Stopping execution to prevent further issues."
+        )
+    )
 
-    return {
-        "messages": [stop_message],
-        "execution_stopped": True
-    }
+    return {"messages": [stop_message], "execution_stopped": True}
 
-def _create_llm(provider: str = "ollama",
-               anthropic_api_key: Optional[str] = None,
-               ollama_base_url: str = "http://localhost:11434",
-               model: Optional[str] = None,
-               temperature: float = 0):
+
+def _create_llm(
+    provider: str = "ollama",
+    anthropic_api_key: str | None = None,
+    ollama_base_url: str = "http://localhost:11434",
+    model: str | None = None,
+    temperature: float = 0,
+):
     """
     Create an LLM instance based on the provider.
 
@@ -226,7 +257,9 @@ def _create_llm(provider: str = "ollama",
                 print(f"Warning: Ollama unavailable ({e}), falling back to Anthropic")
                 provider = "anthropic"
             else:
-                raise Exception(f"Ollama unavailable and no Anthropic API key provided: {e}")
+                raise Exception(
+                    f"Ollama unavailable and no Anthropic API key provided: {e}"
+                )
 
     if provider == "anthropic":
         if not anthropic_api_key:
@@ -236,17 +269,20 @@ def _create_llm(provider: str = "ollama",
             temperature=temperature,
             model=default_model,
             anthropic_api_key=anthropic_api_key,
-            max_tokens=4096
+            max_tokens=4096,
         )
 
     raise ValueError(f"Unsupported provider: {provider}")
 
-def create_graph(provider: str = "ollama",
-                anthropic_api_key: Optional[str] = None,
-                ollama_base_url: str = "http://localhost:11434",
-                model: Optional[str] = None,
-                temperature: float = 0,
-                max_steps: int = 5):
+
+def create_graph(
+    provider: str = "ollama",
+    anthropic_api_key: str | None = None,
+    ollama_base_url: str = "http://localhost:11434",
+    model: str | None = None,
+    temperature: float = 0,
+    max_steps: int = 5,
+):
     """
     Create a LangGraph for GitHub analysis with configurable LLM provider.
 
@@ -263,44 +299,41 @@ def create_graph(provider: str = "ollama",
     """
     # Initialize our graph builder
     graph = StateGraph(GitHubToolState)
-    
+
     # Initialize our LLM
     llm = _create_llm(
         provider=provider,
         anthropic_api_key=anthropic_api_key,
         ollama_base_url=ollama_base_url,
         model=model,
-        temperature=temperature
+        temperature=temperature,
     )
-    
+
     # Create our tools list
     tools = [
         StarredRepositoriesTool(),
         RepositorySearchTool(),
         RepositoryActivityTool(),
         RateLimitCheckTool(),
-        TokenValidationTool()
+        TokenValidationTool(),
     ]
-    
+
     # Bind tools to the LLM
     llm_with_tools = llm.bind_tools(tools)
-    
+
     # Define the chatbot node - this handles the core conversation
     def chatbot(state: GitHubToolState):
         # Increment step counter
         steps = state.get("step_count", 0) + 1
-        
+
         # Generate LLM response
         response = llm_with_tools.invoke(state["messages"])
-        
-        return {
-            "messages": [response],
-            "step_count": steps
-        }
-    
+
+        return {"messages": [response], "step_count": steps}
+
     # Create a tools node to handle tool execution
     tool_node = ToolNode(tools=tools)
-    
+
     # Add nodes to graph
     graph.add_node("chatbot", chatbot)
     graph.add_node("tools", tool_node)
@@ -313,8 +346,8 @@ def create_graph(provider: str = "ollama",
         tools_condition,
         {
             "tools": "tools",  # If tools needed, go to tools node
-            END: END  # Otherwise end
-        }
+            END: END,  # Otherwise end
+        },
     )
 
     graph.add_conditional_edges(
@@ -322,28 +355,23 @@ def create_graph(provider: str = "ollama",
         error_detection_condition,
         {
             "run_diagnostics": "run_diagnostics",
-            "continue": "chatbot"  # Normal flow continues to chatbot
-        }
+            "continue": "chatbot",  # Normal flow continues to chatbot
+        },
     )
 
     # Add conditional edge from diagnostics (check if we can continue)
     graph.add_conditional_edges(
         "run_diagnostics",
         can_continue_condition,
-        {
-            "continue": "chatbot",
-            "stop": "diagnostic_stop"
-        }
+        {"continue": "chatbot", "stop": "diagnostic_stop"},
     )
 
     # Add edge from diagnostic stop to end
     graph.add_edge("diagnostic_stop", END)
     graph.add_edge(START, "chatbot")
-    
+
     # Set up checkpointing
     memory = MemorySaver()
-    
+
     # Compile and return the graph
-    return graph.compile(
-        checkpointer=memory
-    )
+    return graph.compile(checkpointer=memory)

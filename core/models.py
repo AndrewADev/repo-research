@@ -5,5 +5,6 @@ from pydantic import (
 
 class ThreadedPrompt(BaseModel):
     """Prompt with follow-up questions"""
+
     prompt: str
     follow_ups: list[str]
