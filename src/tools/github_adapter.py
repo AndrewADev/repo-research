@@ -65,7 +65,29 @@ class StarredRepositoriesTool(BaseTool):
         """Execute the starred repositories tool."""
         try:
             repos = github_tools.get_starred_repositories(username, sort_by)
-            return json.dumps(repos, default=str, indent=2)
+
+            # Enhanced response with metadata
+            response = {
+                "results": repos,
+                "search_metadata": {
+                    "username": username or "authenticated_user",
+                    "sort_by": sort_by,
+                    "total_found": len(repos),
+                    "has_results": len(repos) > 0,
+                },
+            }
+
+            # Add specific messaging for no results
+            if len(repos) == 0:
+                user_display = username or "the authenticated user"
+                response["search_metadata"]["suggestion"] = (
+                    f"No starred repositories found for {user_display}. "
+                    "Consider: 1) Verifying the username is correct, "
+                    "2) Checking if the user has any starred repositories, "
+                    "3) Trying a different user, or 4) Asking for alternative analysis."
+                )
+
+            return json.dumps(response, default=str, indent=2)
         except Exception as e:
             return json.dumps({"error": str(e)})
 
@@ -89,7 +111,27 @@ class RepositorySearchTool(BaseTool):
         """Execute the repository search tool."""
         try:
             results = github_tools.search_repositories(query, sort, limit)
-            return json.dumps(results, default=str, indent=2)
+
+            # Enhanced response with search metadata
+            response = {
+                "results": results,
+                "search_metadata": {
+                    "query": query,
+                    "total_found": len(results),
+                    "has_results": len(results) > 0,
+                },
+            }
+
+            # Add specific messaging for no results
+            if len(results) == 0:
+                response["search_metadata"]["suggestion"] = (
+                    "No repositories found for this query. Consider: "
+                    "1) Broadening search terms, 2) Checking spelling, "
+                    "3) Using different keywords, or "
+                    "4) Asking the user for alternative search criteria."
+                )
+
+            return json.dumps(response, default=str, indent=2)
         except Exception as e:
             return json.dumps({"error": str(e)})
 
@@ -192,13 +234,39 @@ class RepositorySearchByTopicTool(BaseTool):
             search_params = RepositorySearchByTopicInput(**kwargs)
 
             results = github_tools.search_repositories_by_topic(search_params)
-            return json.dumps(results, default=str, indent=2)
+
+            # Enhanced response with search metadata
+            response = {
+                "results": results,
+                "search_metadata": {
+                    "topics_searched": search_params.topics,
+                    "total_found": len(results),
+                    "has_results": len(results) > 0,
+                    "search_parameters": {
+                        "language": search_params.language,
+                        "min_stars": search_params.min_stars,
+                        "sort": search_params.sort,
+                    },
+                },
+            }
+
+            # Add specific messaging for no results
+            if len(results) == 0:
+                response["search_metadata"]["suggestion"] = (
+                    f"No repositories found with topics {search_params.topics}. "
+                    "Consider: 1) Trying broader or different topics, "
+                    "2) Relaxing filters (stars, language), "
+                    "3) Checking topic spelling, or "
+                    "4) Asking the user for alternative topics to search."
+                )
+
+            return json.dumps(response, default=str, indent=2)
         except Exception as e:
             return json.dumps({"error": str(e)})
 
 
-def error_detection_condition(state: GitHubToolState) -> str:
-    """Simple error detection - when error, run diagnostics."""
+def result_analysis_condition(state: GitHubToolState) -> str:
+    """Analyze tool results for errors and no-results scenarios."""
     messages = state.get("messages", [])
     if not messages:
         return "continue"
@@ -206,10 +274,42 @@ def error_detection_condition(state: GitHubToolState) -> str:
     last_message = messages[-1]
     if hasattr(last_message, "content") and last_message.content:
         content = last_message.content.lower()
+
+        # Check for explicit errors first
         if "error" in content:
             return "run_diagnostics"
 
+        # Check for no-results scenarios
+        no_results_indicators = [
+            '"has_results": false',
+            '"total_found": 0',
+            "no repositories found",
+            "no results",
+            "consider: 1) broadening search terms",
+        ]
+
+        if any(indicator in content for indicator in no_results_indicators):
+            return "handle_no_results"
+
     return "continue"
+
+
+def handle_no_results_node(state: GitHubToolState):
+    """Handle no-results scenarios by automatically concluding gracefully."""
+    no_results_message = AIMessage(
+        content=(
+            "🔍 **No Results Found - Task Concluded**\n\n"
+            "The search didn't return any repositories matching the criteria. "
+            "This could indicate:\n\n"
+            "- The specific combination of topics/filters is very rare\n"
+            "- The search terms might need adjustment\n"
+            "- The desired repositories may not exist or be publicly available\n\n"
+            "To try a different search, please run the command again with "
+            "different topics or search criteria."
+        )
+    )
+
+    return {"messages": [no_results_message], "task_concluded": True}
 
 
 def run_diagnostics_node(state: GitHubToolState):
@@ -393,6 +493,7 @@ def create_graph(
     graph.add_node("tools", tool_node)
     graph.add_node("run_diagnostics", run_diagnostics_node)
     graph.add_node("diagnostic_stop", diagnostic_stop_node)
+    graph.add_node("handle_no_results", handle_no_results_node)
 
     # Add conditional edges from chatbot
     graph.add_conditional_edges(
@@ -404,11 +505,13 @@ def create_graph(
         },
     )
 
+    # Enhanced tools conditional logic to handle errors and no-results
     graph.add_conditional_edges(
         "tools",
-        error_detection_condition,
+        result_analysis_condition,
         {
             "run_diagnostics": "run_diagnostics",
+            "handle_no_results": "handle_no_results",
             "continue": "chatbot",  # Normal flow continues to chatbot
         },
     )
@@ -420,7 +523,8 @@ def create_graph(
         {"continue": "chatbot", "stop": "diagnostic_stop"},
     )
 
-    # Add edge from diagnostic stop to end
+    # No-results handler automatically ends the task
+    graph.add_edge("handle_no_results", END)
     graph.add_edge("diagnostic_stop", END)
     graph.add_edge(START, "chatbot")
 

@@ -170,9 +170,12 @@ class GitHubTools:
             self._handle_rate_limit()
 
             results = []
-            repositories = self.github.search_repositories(query=query, sort=sort)
+            repositories_pages = self.github.search_repositories(query=query, sort=sort)
 
-            for repo in repositories[:limit]:
+            if repositories_pages.totalCount < 1:
+                return results
+
+            for repo in repositories_pages[:limit]:
                 repo_data = {
                     "name": repo.full_name,
                     "description": repo.description,
@@ -507,11 +510,14 @@ class GitHubTools:
             query = self._build_repository_search_query(search_params)
 
             results = []
-            repositories = self.github.search_repositories(
+            repositories_pages = self.github.search_repositories(
                 query=query, sort=search_params.sort
             )
 
-            for repo in repositories[: search_params.limit]:
+            if repositories_pages.totalCount < 1:
+                return results
+
+            for repo in repositories_pages[: search_params.limit]:
                 # Get topics for this repository
                 repo_topics = []
                 try:
