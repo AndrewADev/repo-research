@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 from core.models import TemplatedPrompt, ThreadedPrompt
 from core.prompts import comprehensive_analysis, run_diagnostic, topic_prompt
-from tools.github_adapter import create_graph
+from integrations.github.agent import create_graph
 
 # Load environment variables
 load_dotenv()

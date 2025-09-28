@@ -16,6 +16,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from dotenv import load_dotenv
+
 from github import Auth, Github, GithubException
 
 if TYPE_CHECKING:
