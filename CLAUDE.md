@@ -30,6 +30,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 1. Get API key from https://console.anthropic.com/
 2. Set `LLM_PROVIDER=anthropic` in .env or use as fallback when Ollama unavailable
 
+### Pre-commit Hooks
+- Install prek: `pip install prek` (or `uv tool install prek`)
+- Install hooks: `prek install`
+- Run hooks manually: `prek run --all-files`
+- The project uses comprehensive pre-commit hooks including:
+  - Ruff linting and formatting
+  - File hygiene checks (trailing whitespace, end-of-file fixes)
+  - Syntax validation for YAML, JSON, TOML
+  - Python AST validation and debug statement detection
+  - Security checks for secrets and private keys
+
 ### Running the Application
 - Execute main analysis: `uv run python agent.py`
 - Available commands: `uv run python agent.py --help`
@@ -91,10 +102,14 @@ This architecture enables complex multi-step GitHub analysis workflows while mai
 The project includes modern development tooling:
 - **uv**: Fast Python package manager for dependency management
 - **ruff**: Integrated linting, formatting, and import sorting
+- **prek**: Pre-commit hook manager (drop-in replacement for pre-commit)
 - **pyproject.toml**: Modern Python project configuration
+- **pre-commit hooks**: Comprehensive code quality and security checks
 
 Available development commands:
 - `uv sync --dev` - Install all dependencies including dev tools
 - `uv run ruff check` - Run linting checks
 - `uv run ruff format` - Format code
 - `uv run ruff check --fix` - Auto-fix linting issues
+- `prek install` - Install pre-commit hooks
+- `prek run --all-files` - Run all pre-commit hooks manually

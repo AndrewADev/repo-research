@@ -5,25 +5,13 @@
 
 ### Example usage
 
-```python
-if __name__ == "__main__":
-    # Initialize the tools
-    github_tools = GitHubTools()
-    
-    try:
-        # Get and print starred repositories
-        starred = github_tools.get_starred_repositories(sort_by="stars")
-        print(f"Found {len(starred)} starred repositories")
-        
-        # Search for repositories
-        python_repos = github_tools.search_repositories("language:python stars:>1000", 
-                                                      sort="stars", 
-                                                      limit=5)
-        print(f"Found {len(python_repos)} matching repositories")
-        
-    finally:
-        # Always close the connection
-        github_tools.close()
+```shell
+uv run agent.py analyze
+```
+
+Available commands:
+```shell
+uv run agent.py --help
 ```
 
 
@@ -32,10 +20,30 @@ if __name__ == "__main__":
 ### Setup
 
 Install all dependencies including dev tools with:
-```
+```shell
 uv sync --dev
 ```
 
+### Pre-commit hooks
+
+You will also need to make sure you can run the pre-commit hooks, which are generally run with `prek`:
+
+```shell
+uv tool install prek
+```
+
+Check the output to see if any additional steps are needed (e.g. profile or $PATH updates) then restart you shell, if necessary.
+
+Now you should be able to run the pre-commit checks:
+
+```shell
+prek run
+```
+
+For best results, you should install them to be run automatically:
+```shell
+prek install
+```
 
 ### Linting & formatting
 Linting and formatting available via:

@@ -25,6 +25,5 @@ jobs:
       run: |
         uv sync --dev
 
-    - name: Code quality checks
-      run: |
-        uv run ruff check
+    - name: Install prek
+      uses: j178/prek-action@v1
