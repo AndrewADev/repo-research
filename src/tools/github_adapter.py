@@ -29,6 +29,7 @@ from tools.github_models import (
     TokenValidationInput,
 )
 
+from .date_tools import CurrentDateTool, DateOffsetTool
 from .github_tools import GitHubTools
 
 
@@ -182,16 +183,15 @@ class RepositorySearchByTopicTool(BaseTool):
     args_schema: type[BaseModel] = RepositorySearchByTopicInput
 
     @with_github_tools
-    def _run(
-        self,
-        topics: list[str],
-        sort: str = "updated",
-        limit: int = 25,
-        github_tools: GitHubTools | None = None,
-    ) -> str:
+    def _run(self, github_tools: GitHubTools | None = None, **kwargs) -> str:
         """Execute the repository search by topic tool."""
         try:
-            results = github_tools.search_repositories_by_topic(topics, sort, limit)
+            from tools.github_models import RepositorySearchByTopicInput
+
+            # Create the search parameters model from the kwargs
+            search_params = RepositorySearchByTopicInput(**kwargs)
+
+            results = github_tools.search_repositories_by_topic(search_params)
             return json.dumps(results, default=str, indent=2)
         except Exception as e:
             return json.dumps({"error": str(e)})
@@ -368,6 +368,8 @@ def create_graph(
         TokenValidationTool(),
         RepositoryLabelsTool(),
         RepositorySearchByTopicTool(),
+        CurrentDateTool(),
+        DateOffsetTool(),
     ]
 
     # Bind tools to the LLM

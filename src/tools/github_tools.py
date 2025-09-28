@@ -13,9 +13,13 @@ Requirements:
 import os
 import time
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from dotenv import load_dotenv
 from github import Auth, Github, GithubException
+
+if TYPE_CHECKING:
+    from tools.github_models import RepositorySearchByTopicInput
 
 
 class GitHubTools:
@@ -383,17 +387,115 @@ class GitHubTools:
         except GithubException as e:
             raise Exception(f"GitHub API error: {str(e)}") from e
 
-    def search_repositories_by_topic(
-        self, topics: list[str], sort: str | None = "updated", limit: int = 25
-    ) -> list[dict]:
+    def _build_repository_search_query(
+        self, search_params: "RepositorySearchByTopicInput"
+    ) -> str:
         """
-        Search for repositories that have specific topics assigned.
+        Build a GitHub search query string from search parameters.
 
         Args:
-            topics: List of topic names to search for
-            sort: How to sort results ("stars", "forks", "updated", "created",
-                "pushed", "full_name")
-            limit: Maximum number of results to return
+            search_params: RepositorySearchByTopicInput with search criteria
+
+        Returns:
+            GitHub search query string
+        """
+        query_parts = [f"topic:{topic}" for topic in search_params.topics]
+
+        # Add language filter
+        if search_params.language:
+            query_parts.append(f"language:{search_params.language}")
+
+        # Add license filter
+        if search_params.license:
+            query_parts.append(f"license:{search_params.license}")
+
+        # Add star filters
+        if search_params.min_stars is not None and search_params.max_stars is not None:
+            query_parts.append(
+                f"stars:{search_params.min_stars}..{search_params.max_stars}"
+            )
+        elif search_params.min_stars is not None:
+            query_parts.append(f"stars:>={search_params.min_stars}")
+        elif search_params.max_stars is not None:
+            query_parts.append(f"stars:<={search_params.max_stars}")
+
+        # Add fork filters
+        if search_params.min_forks is not None and search_params.max_forks is not None:
+            query_parts.append(
+                f"forks:{search_params.min_forks}..{search_params.max_forks}"
+            )
+        elif search_params.min_forks is not None:
+            query_parts.append(f"forks:>={search_params.min_forks}")
+        elif search_params.max_forks is not None:
+            query_parts.append(f"forks:<={search_params.max_forks}")
+
+        # Add date filters
+        if search_params.created_after and search_params.created_before:
+            query_parts.append(
+                f"created:{search_params.created_after}..{search_params.created_before}"
+            )
+        elif search_params.created_after:
+            query_parts.append(f"created:>={search_params.created_after}")
+        elif search_params.created_before:
+            query_parts.append(f"created:<={search_params.created_before}")
+
+        if search_params.updated_after and search_params.updated_before:
+            query_parts.append(
+                f"updated:{search_params.updated_after}..{search_params.updated_before}"
+            )
+        elif search_params.updated_after:
+            query_parts.append(f"updated:>={search_params.updated_after}")
+        elif search_params.updated_before:
+            query_parts.append(f"updated:<={search_params.updated_before}")
+
+        if search_params.pushed_after and search_params.pushed_before:
+            query_parts.append(
+                f"pushed:{search_params.pushed_after}..{search_params.pushed_before}"
+            )
+        elif search_params.pushed_after:
+            query_parts.append(f"pushed:>={search_params.pushed_after}")
+        elif search_params.pushed_before:
+            query_parts.append(f"pushed:<={search_params.pushed_before}")
+
+        # Add size filters
+        if (
+            search_params.size_min_kb is not None
+            and search_params.size_max_kb is not None
+        ):
+            query_parts.append(
+                f"size:{search_params.size_min_kb}..{search_params.size_max_kb}"
+            )
+        elif search_params.size_min_kb is not None:
+            query_parts.append(f"size:>={search_params.size_min_kb}")
+        elif search_params.size_max_kb is not None:
+            query_parts.append(f"size:<={search_params.size_max_kb}")
+
+        # Add boolean filters
+        if search_params.archived is not None:
+            query_parts.append(f"archived:{str(search_params.archived).lower()}")
+
+        if search_params.template is not None:
+            query_parts.append(f"template:{str(search_params.template).lower()}")
+
+        if search_params.fork is not None:
+            query_parts.append(f"fork:{str(search_params.fork).lower()}")
+
+        if search_params.is_public is not None:
+            if search_params.is_public:
+                query_parts.append("is:public")
+            else:
+                query_parts.append("is:private")
+
+        return " ".join(query_parts)
+
+    def search_repositories_by_topic(
+        self, search_params: "RepositorySearchByTopicInput"
+    ) -> list[dict]:
+        """
+        Search for repositories with specific topics and advanced filtering.
+
+        Args:
+            search_params: RepositorySearchByTopicInput with search criteria and filters
 
         Returns:
             List of matching repositories with topic information
@@ -401,13 +503,15 @@ class GitHubTools:
         try:
             self._handle_rate_limit()
 
-            # Build search query with topics
-            topic_query = " ".join(f"topic:{topic}" for topic in topics)
+            # Build search query from parameters
+            query = self._build_repository_search_query(search_params)
 
             results = []
-            repositories = self.github.search_repositories(query=topic_query, sort=sort)
+            repositories = self.github.search_repositories(
+                query=query, sort=search_params.sort
+            )
 
-            for repo in repositories[:limit]:
+            for repo in repositories[: search_params.limit]:
                 # Get topics for this repository
                 repo_topics = []
                 try:
@@ -424,10 +528,18 @@ class GitHubTools:
                     "language": repo.language,
                     "url": repo.html_url,
                     "updated_at": repo.updated_at,
+                    "created_at": repo.created_at,
+                    "pushed_at": repo.pushed_at,
+                    "size": repo.size,
+                    "archived": repo.archived,
+                    "fork": repo.fork,
+                    "private": repo.private,
+                    "license": repo.license.key if repo.license else None,
                     "topics": repo_topics,
                     "matched_topics": [
-                        topic for topic in topics if topic in repo_topics
+                        topic for topic in search_params.topics if topic in repo_topics
                     ],
+                    "query_used": query,
                 }
                 results.append(repo_data)
 
