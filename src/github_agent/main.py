@@ -45,8 +45,9 @@ def run_prompt(prompt: ThreadedPrompt):
             {"messages": [("user", prompt.prompt)]}, config, stream_mode="values"
         )
 
-        # Track if we hit a diagnostic stop condition
-        diagnostic_stopped = False
+        # Track if we hit a stop condition
+        should_stop = False
+        stop_reason = None
 
         # Print each event as it occurs
         for event in events:
@@ -54,19 +55,23 @@ def run_prompt(prompt: ThreadedPrompt):
                 last_message = event["messages"][-1]
                 print(f"Step output: {last_message.content}\n")
 
-                # Check if this was a diagnostic stop message
-                if (
-                    hasattr(last_message, "content")
-                    and "Execution Stopped Due to Diagnostics" in last_message.content
-                ):
-                    diagnostic_stopped = True
+                # Check for various stop conditions
+                if hasattr(last_message, "content"):
+                    content = last_message.content
+                    if "Execution Stopped Due to Diagnostics" in content:
+                        should_stop = True
+                        stop_reason = "diagnostics"
+                    elif "Task Concluded" in content:
+                        should_stop = True
+                        stop_reason = "no_results"
 
     except Exception as e:
         print(f"Error during analysis: {str(e)}")
-        diagnostic_stopped = True
+        should_stop = True
+        stop_reason = "exception"
 
-    # Only run follow-ups if we didn't stop due to diagnostics
-    if not diagnostic_stopped:
+    # Only run follow-ups if we didn't stop
+    if not should_stop:
         for follow_up in prompt.follow_ups:
             events = graph.stream(
                 {"messages": [("user", follow_up)]}, config, stream_mode="values"
@@ -77,7 +82,12 @@ def run_prompt(prompt: ThreadedPrompt):
                     last_message = event["messages"][-1]
                     print(f"Follow-up response: {last_message.content}\n")
     else:
-        print("⚠️ Skipping follow-up prompts due to diagnostic stop condition.")
+        if stop_reason == "diagnostics":
+            print("⚠️ Skipping follow-up prompts due to diagnostic stop condition.")
+        elif stop_reason == "no_results":
+            print("✅ Task completed - no results found.")
+        elif stop_reason == "exception":
+            print("❌ Skipping follow-up prompts due to error.")
 
 
 def run_templated_prompt(prompt: TemplatedPrompt, user_args: list[str]):
