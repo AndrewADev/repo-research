@@ -6,10 +6,10 @@ repos:
       # Linter
       - id: ruff
         args: [--fix]
-        types_or: [python, pyi, jupyter]
+        types_or: [python]
       # Formatter
       - id: ruff-format
-        types_or: [python, pyi, jupyter]
+        types_or: [python]
 
   # Built-in hooks for general file hygiene
   - repo: https://github.com/pre-commit/pre-commit-hooks

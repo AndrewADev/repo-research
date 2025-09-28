@@ -1,4 +1,6 @@
-from core.models import ThreadedPrompt
+from langchain_core.prompts import PromptTemplate
+
+from core.models import TemplatedPrompt, ThreadedPrompt
 
 comprehensive_analysis = ThreadedPrompt(
     prompt="""
@@ -19,4 +21,13 @@ I want to run diagnostics on various settings.
     follow_ups=[
         "Have any immediate issues been identified?",
     ],
+)
+
+
+topic_prompt = TemplatedPrompt(
+    template=PromptTemplate.from_template(
+        "I'm interested in learning about new GitHub repositories."
+        "I was wondering if you could find me repositories related to: {topics}"
+    ),
+    keys=["topics"],
 )

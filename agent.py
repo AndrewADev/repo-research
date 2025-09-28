@@ -3,8 +3,8 @@ import os
 import typer
 from dotenv import load_dotenv
 
-from core.models import ThreadedPrompt
-from core.prompts import comprehensive_analysis, run_diagnostic
+from core.models import TemplatedPrompt, ThreadedPrompt
+from core.prompts import comprehensive_analysis, run_diagnostic, topic_prompt
 from tools.github_adapter import create_graph
 
 # Load environment variables
@@ -80,6 +80,41 @@ def run_prompt(prompt: ThreadedPrompt):
         print("⚠️ Skipping follow-up prompts due to diagnostic stop condition.")
 
 
+def run_templated_prompt(prompt: TemplatedPrompt, user_args: list[str]):
+    call_args = {}
+
+    # Handle the case where we have multiple user args but only one template key
+    # (e.g., multiple topics passed as comma-separated list)
+    if len(prompt.keys) == 1 and len(user_args) > 1:
+        # Join all arguments with commas for the single key
+        key = prompt.keys[0]
+        call_args[key] = ", ".join(user_args)
+    else:
+        # Original 1:1 mapping for multiple keys
+        for i, key in enumerate(prompt.keys):
+            if i < len(user_args):
+                call_args[key] = user_args[i]
+            else:
+                call_args[key] = ""  # Default to empty string if not enough args
+
+    # Format the template with the provided arguments
+    formatted_prompt = prompt.template.format(**call_args)
+
+    # Run the formatted prompt through the graph
+    try:
+        events = graph.stream(
+            {"messages": [("user", formatted_prompt)]}, config, stream_mode="values"
+        )
+
+        for event in events:
+            if "messages" in event:
+                last_message = event["messages"][-1]
+                print(f"Response: {last_message.content}\n")
+
+    except Exception as e:
+        print(f"Error during templated prompt execution: {str(e)}")
+
+
 @app.command()
 def diagnostics():
     """Diagnose issues with the setup"""
@@ -90,6 +125,15 @@ def diagnostics():
 def analyze():
     """Run comprehensive analysis of starred repositories"""
     run_prompt(comprehensive_analysis)
+
+
+@app.command()
+def topics(topics_raw: str):
+    """Search for repositories related to specific topics/with specific labels"""
+
+    parsed_topics = topics_raw.split(",")
+
+    run_templated_prompt(topic_prompt, parsed_topics)
 
 
 if __name__ == "__main__":
