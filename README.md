@@ -54,3 +54,18 @@ Linting and formatting available via:
 - `uv run ruff check` - Run linting checks
 - `uv run ruff format` - Format code
 - `uv run ruff check --fix` - Auto-fix linting issues
+
+
+### Observability and traces (LangSmith)
+
+Being a LangGraph project, it is easy to set up observability with LangSmith.
+
+After signing into your account (optionally creating a new project), simply copy over the following values to your `.env` file:
+```dotenv
+LANGSMITH_TRACING=true
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com # Or your endpoint
+LANGSMITH_API_KEY=<your API key>
+LANGSMITH_PROJECT=<your proj name>
+```
+
+Be sure not to include sensitive values in files you commit to source!
