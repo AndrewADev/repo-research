@@ -42,8 +42,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - Security checks for secrets and private keys
 
 ### Running the Application
-- Execute main analysis: `uv run python agent.py`
-- Available commands: `uv run python agent.py --help`
+- Execute main analysis: `uv run github-agent`
+- Available commands: `uv run github-agent --help`
+- Specific commands:
+  - `uv run github-agent diagnostics` - Diagnose setup issues
+  - `uv run github-agent analyze` - Run comprehensive starred repository analysis
+  - `uv run github-agent topics "ai,machine-learning"` - Search repositories by topics
 - The application runs predefined GitHub analysis workflows using LangGraph
 
 ## Architecture Overview
@@ -52,23 +56,28 @@ This is a GitHub analysis tool built with LangGraph, configurable LLM providers 
 
 ### Core Components
 
-1. **agent.py** - Entry point that orchestrates the GitHub analysis workflow
+1. **src/github_agent/main.py** - Entry point that orchestrates the GitHub analysis workflow
    - Creates and configures the LangGraph execution graph
    - Defines analysis prompts for repository analysis
    - Handles streaming responses and conversation flow
+   - Provides CLI interface via Typer
 
-2. **tools/github_tools.py** - Core GitHub API integration
+2. **src/tools/github_tools.py** - Core GitHub API integration
    - `GitHubTools` class provides authenticated GitHub API access
    - Methods for repository search, starred repos, and activity analysis
    - Built-in rate limiting and error handling
    - Supports both authenticated user and public user operations
 
-3. **tools/github_adapter.py** - LangGraph integration layer
+3. **src/tools/github_adapter.py** - LangGraph integration layer
    - Defines Pydantic schemas for tool input validation
    - `StarredRepositoriesTool`, `RepositorySearchTool`, `RepositoryActivityTool`
    - Creates and configures the LangGraph state machine
    - Supports multiple LLM providers (Ollama, Anthropic) with automatic fallback
    - Integrates LLMs with GitHub tools using proper tool binding
+
+4. **src/core/** - Core application models and prompts
+   - `models.py` - Pydantic models for templated and threaded prompts
+   - `prompts.py` - Predefined analysis prompts and workflows
 
 ### Key Design Patterns
 

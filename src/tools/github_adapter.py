@@ -186,7 +186,7 @@ class RepositorySearchByTopicTool(BaseTool):
         self,
         topics: list[str],
         sort: str = "updated",
-        limit: int = 10,
+        limit: int = 25,
         github_tools: GitHubTools | None = None,
     ) -> str:
         """Execute the repository search by topic tool."""
