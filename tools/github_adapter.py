@@ -22,6 +22,8 @@ from tools.github_models import (
     ActivityAnalysisInput,
     GitHubToolState,
     RateLimitInput,
+    RepositoryLabelsInput,
+    RepositorySearchByTopicInput,
     SearchRepoInput,
     StarredRepoInput,
     TokenValidationInput,
@@ -145,6 +147,52 @@ class TokenValidationTool(BaseTool):
         try:
             validation_result = github_tools.validate_token()
             return json.dumps(validation_result, default=str, indent=2)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+
+class RepositoryLabelsTool(BaseTool):
+    name: str = "get_repository_labels"
+    description: str = """
+    Retrieve all labels from a specific GitHub repository.
+    Useful for understanding the labeling system and organization of
+    issues/PRs in a repository.
+
+    Returns label names, colors, descriptions, and URLs.
+    """
+    args_schema: type[BaseModel] = RepositoryLabelsInput
+
+    @with_github_tools
+    def _run(self, repo_full_name: str, github_tools: GitHubTools | None = None) -> str:
+        """Execute the repository labels tool."""
+        try:
+            labels = github_tools.get_repository_labels(repo_full_name)
+            return json.dumps(labels, default=str, indent=2)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+
+class RepositorySearchByTopicTool(BaseTool):
+    name: str = "search_repositories_by_topic"
+    description: str = """
+    Search for GitHub repositories that have specific topics assigned.
+    Useful for discovering repositories by technology, category, or purpose.
+    Returns repositories with their topics and matches the specified topic criteria.
+    """
+    args_schema: type[BaseModel] = RepositorySearchByTopicInput
+
+    @with_github_tools
+    def _run(
+        self,
+        topics: list[str],
+        sort: str = "updated",
+        limit: int = 10,
+        github_tools: GitHubTools | None = None,
+    ) -> str:
+        """Execute the repository search by topic tool."""
+        try:
+            results = github_tools.search_repositories_by_topic(topics, sort, limit)
+            return json.dumps(results, default=str, indent=2)
         except Exception as e:
             return json.dumps({"error": str(e)})
 
@@ -318,6 +366,8 @@ def create_graph(
         RepositoryActivityTool(),
         RateLimitCheckTool(),
         TokenValidationTool(),
+        RepositoryLabelsTool(),
+        RepositorySearchByTopicTool(),
     ]
 
     # Bind tools to the LLM

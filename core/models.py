@@ -1,3 +1,4 @@
+from langchain_core.prompts import PromptTemplate
 from pydantic import (
     BaseModel,
 )
@@ -8,3 +9,8 @@ class ThreadedPrompt(BaseModel):
 
     prompt: str
     follow_ups: list[str]
+
+
+class TemplatedPrompt(BaseModel):
+    template: PromptTemplate
+    keys: list[str]

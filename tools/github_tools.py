@@ -155,7 +155,8 @@ class GitHubTools:
 
         Args:
             query: Search query string
-            sort: How to sort results ("stars", "forks", "updated")
+            sort: How to sort results ("stars", "forks",
+                "updated")
             limit: Maximum number of results to return
 
         Returns:
@@ -351,6 +352,89 @@ class GitHubTools:
                 "error_type": type(e).__name__,
                 "issue": "Unexpected error during token validation",
             }
+
+    def get_repository_labels(self, repo_full_name: str) -> list[dict]:
+        """
+        Retrieve all labels from a specific repository.
+
+        Args:
+            repo_full_name: Full repository name (e.g., "username/repo")
+
+        Returns:
+            List of dictionaries containing label information
+        """
+        try:
+            self._handle_rate_limit()
+
+            repo = self.github.get_repo(repo_full_name)
+            labels = []
+
+            for label in repo.get_labels():
+                label_data = {
+                    "name": label.name,
+                    "color": label.color,
+                    "description": label.description,
+                    "url": label.url,
+                }
+                labels.append(label_data)
+
+            return labels
+
+        except GithubException as e:
+            raise Exception(f"GitHub API error: {str(e)}") from e
+
+    def search_repositories_by_topic(
+        self, topics: list[str], sort: str | None = "updated", limit: int = 25
+    ) -> list[dict]:
+        """
+        Search for repositories that have specific topics assigned.
+
+        Args:
+            topics: List of topic names to search for
+            sort: How to sort results ("stars", "forks", "updated", "created",
+                "pushed", "full_name")
+            limit: Maximum number of results to return
+
+        Returns:
+            List of matching repositories with topic information
+        """
+        try:
+            self._handle_rate_limit()
+
+            # Build search query with topics
+            topic_query = " ".join(f"topic:{topic}" for topic in topics)
+
+            results = []
+            repositories = self.github.search_repositories(query=topic_query, sort=sort)
+
+            for repo in repositories[:limit]:
+                # Get topics for this repository
+                repo_topics = []
+                try:
+                    repo_topics = repo.get_topics()
+                except Exception:
+                    # If we can't get topics, continue without them
+                    pass
+
+                repo_data = {
+                    "name": repo.full_name,
+                    "description": repo.description,
+                    "stars": repo.stargazers_count,
+                    "forks": repo.forks_count,
+                    "language": repo.language,
+                    "url": repo.html_url,
+                    "updated_at": repo.updated_at,
+                    "topics": repo_topics,
+                    "matched_topics": [
+                        topic for topic in topics if topic in repo_topics
+                    ],
+                }
+                results.append(repo_data)
+
+            return results
+
+        except GithubException as e:
+            raise Exception(f"GitHub API error: {str(e)}") from e
 
     def close(self) -> None:
         """Close the GitHub connection."""

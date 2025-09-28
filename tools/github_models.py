@@ -51,6 +51,26 @@ class TokenValidationInput(BaseModel):
     pass
 
 
+class RepositoryLabelsInput(BaseModel):
+    """Input schema for repository labels tool."""
+
+    repo_full_name: str = Field(
+        ..., description="Full repository name (e.g., 'username/repo')"
+    )
+
+
+class RepositorySearchByTopicInput(BaseModel):
+    """Input schema for repository search by topic tool."""
+
+    topics: list[str] = Field(..., description="List of topic names to search for")
+    sort: Literal["stars", "forks", "updated", "created", "pushed", "full_name"] = (
+        Field("updated", description="How to sort the results")
+    )
+    limit: int = Field(
+        25, description="Maximum number of results to return", ge=1, le=100
+    )
+
+
 # Define our graph state
 class GitHubToolState(TypedDict):
     """The state of our GitHub analysis graph."""
