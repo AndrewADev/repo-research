@@ -26,6 +26,8 @@ github-agent = "github_agent.main:app"
 [project.optional-dependencies]
 dev = [
     "ruff",
+    "pytest",
+    "pytest-mock",
 ]
 
 [tool.ruff]
@@ -53,4 +55,6 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "ruff>=0.13.2",
+    "pytest>=8.0.0",
+    "pytest-mock>=3.10.0",
 ]
