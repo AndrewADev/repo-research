@@ -69,6 +69,58 @@ class RepositorySearchByTopicInput(BaseModel):
     limit: int = Field(
         25, description="Maximum number of results to return", ge=1, le=100
     )
+    language: str | None = Field(
+        None,
+        description="Programming language to filter by (e.g., 'python', 'javascript')",
+    )
+    license: str | None = Field(
+        None,
+        description="License type to filter by (e.g., 'mit', 'apache-2.0', 'gpl-3.0')",
+    )
+    min_stars: int | None = Field(25, description="Minimum number of stars", ge=0)
+    max_stars: int | None = Field(None, description="Maximum number of stars", ge=0)
+    min_forks: int | None = Field(None, description="Minimum number of forks", ge=0)
+    max_forks: int | None = Field(None, description="Maximum number of forks", ge=0)
+    created_after: str | None = Field(
+        None, description="Created after date in YYYY-MM-DD format"
+    )
+    created_before: str | None = Field(
+        None, description="Created before date in YYYY-MM-DD format"
+    )
+    updated_after: str | None = Field(
+        None, description="Updated after date in YYYY-MM-DD format"
+    )
+    updated_before: str | None = Field(
+        None, description="Updated before date in YYYY-MM-DD format"
+    )
+    pushed_after: str | None = Field(
+        None, description="Last push after date in YYYY-MM-DD format"
+    )
+    pushed_before: str | None = Field(
+        None, description="Last push before date in YYYY-MM-DD format"
+    )
+    archived: bool | None = Field(
+        None,
+        description="Filter by archived status (true for archived, false for active)",
+    )
+    template: bool | None = Field(
+        None,
+        description="Filter by template status (true for templates, false for regular)",
+    )
+    fork: bool | None = Field(
+        None,
+        description="Filter by fork status (true for forks, false for originals)",
+    )
+    is_public: bool | None = Field(
+        None,
+        description="Filter by visibility (true for public, false for private)",
+    )
+    size_min_kb: int | None = Field(
+        None, description="Minimum repository size in kilobytes", ge=0
+    )
+    size_max_kb: int | None = Field(
+        None, description="Maximum repository size in kilobytes", ge=0
+    )
 
 
 # Define our graph state

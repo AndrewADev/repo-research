@@ -91,3 +91,4 @@ results/
 temp/
 .DS_Store
 Thumbs.db
+**/*.local.json
