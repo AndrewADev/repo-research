@@ -19,6 +19,9 @@ dependencies = [
     "typer",
 ]
 
+[project.scripts]
+github-agent = "github_agent.main:app"
+
 
 [project.optional-dependencies]
 dev = [
@@ -41,7 +44,7 @@ select = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["tools", "core"]
+known-first-party = ["github_agent", "tools", "core"]
 
 [build-system]
 requires = ["uv_build>=0.8.19,<0.9.0"]
