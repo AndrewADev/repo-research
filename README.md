@@ -3,15 +3,19 @@
 
 ## Usage
 
-### Example usage
+### Example usage (uv-based, local)
 
 ```shell
-uv run agent.py analyze
+uv sync
+```
+
+```shell
+uv run github-agent analyze
 ```
 
 Available commands:
 ```shell
-uv run agent.py --help
+uv run github-agent --help
 ```
 
 
