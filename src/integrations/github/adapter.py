@@ -10,15 +10,10 @@ import json
 from functools import wraps
 
 from langchain.tools import BaseTool
-from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import AIMessage
-from langchain_ollama import ChatOllama
-from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph import END, START, StateGraph
-from langgraph.prebuilt import ToolNode, tools_condition
 from pydantic import BaseModel
 
-from tools.github_models import (
+from .models import (
     ActivityAnalysisInput,
     GitHubToolState,
     RateLimitInput,
@@ -28,9 +23,7 @@ from tools.github_models import (
     StarredRepoInput,
     TokenValidationInput,
 )
-
-from .date_tools import CurrentDateTool, DateOffsetTool
-from .github_tools import GitHubTools
+from .tools import GitHubTools
 
 
 def with_github_tools(func):
@@ -228,7 +221,7 @@ class RepositorySearchByTopicTool(BaseTool):
     def _run(self, github_tools: GitHubTools | None = None, **kwargs) -> str:
         """Execute the repository search by topic tool."""
         try:
-            from tools.github_models import RepositorySearchByTopicInput
+            from .models import RepositorySearchByTopicInput
 
             # Create the search parameters model from the kwargs
             search_params = RepositorySearchByTopicInput(**kwargs)
@@ -371,165 +364,3 @@ def diagnostic_stop_node(state: GitHubToolState):
     )
 
     return {"messages": [stop_message], "execution_stopped": True}
-
-
-def _create_llm(
-    provider: str = "ollama",
-    anthropic_api_key: str | None = None,
-    ollama_base_url: str = "http://localhost:11434",
-    model: str | None = None,
-    temperature: float = 0,
-):
-    """
-    Create an LLM instance based on the provider.
-
-    Args:
-        provider: LLM provider ("ollama" or "anthropic")
-        anthropic_api_key: Anthropic API key (required for anthropic provider)
-        ollama_base_url: Ollama server URL
-        model: Model name (defaults based on provider)
-        temperature: Model temperature (0-1)
-
-    Returns:
-        LLM instance
-    """
-    if provider == "ollama":
-        # Use a model with better tool calling support
-        default_model = model or "qwen3:8b"
-        try:
-            return ChatOllama(
-                model=default_model,
-                base_url=ollama_base_url,
-                temperature=temperature,
-            )
-        except Exception as e:
-            if anthropic_api_key:
-                print(f"Warning: Ollama unavailable ({e}), falling back to Anthropic")
-                provider = "anthropic"
-            else:
-                raise Exception(
-                    f"Ollama unavailable and no Anthropic API key provided: {e}"
-                ) from e
-
-    if provider == "anthropic":
-        if not anthropic_api_key:
-            raise ValueError("Anthropic API key required for anthropic provider")
-        default_model = model or "claude-3-opus-20240229"
-        return ChatAnthropic(
-            temperature=temperature,
-            model=default_model,
-            anthropic_api_key=anthropic_api_key,
-            max_tokens=4096,
-        )
-
-    raise ValueError(f"Unsupported provider: {provider}")
-
-
-def create_graph(
-    provider: str = "ollama",
-    anthropic_api_key: str | None = None,
-    ollama_base_url: str = "http://localhost:11434",
-    model: str | None = None,
-    temperature: float = 0,
-    max_steps: int = 5,
-):
-    """
-    Create a LangGraph for GitHub analysis with configurable LLM provider.
-
-    Args:
-        provider: LLM provider ("ollama" or "anthropic")
-        anthropic_api_key: Anthropic API key (required for anthropic provider)
-        ollama_base_url: Ollama server URL
-        model: Model name (defaults based on provider)
-        temperature: Model temperature (0-1)
-        max_steps: Maximum number of steps before forcibly ending
-
-    Returns:
-        Compiled LangGraph ready for execution
-    """
-    # Initialize our graph builder
-    graph = StateGraph(GitHubToolState)
-
-    # Initialize our LLM
-    llm = _create_llm(
-        provider=provider,
-        anthropic_api_key=anthropic_api_key,
-        ollama_base_url=ollama_base_url,
-        model=model,
-        temperature=temperature,
-    )
-
-    # Create our tools list
-    tools = [
-        StarredRepositoriesTool(),
-        RepositorySearchTool(),
-        RepositoryActivityTool(),
-        RateLimitCheckTool(),
-        TokenValidationTool(),
-        RepositoryLabelsTool(),
-        RepositorySearchByTopicTool(),
-        CurrentDateTool(),
-        DateOffsetTool(),
-    ]
-
-    # Bind tools to the LLM
-    llm_with_tools = llm.bind_tools(tools)
-
-    # Define the chatbot node - this handles the core conversation
-    def chatbot(state: GitHubToolState):
-        # Increment step counter
-        steps = state.get("step_count", 0) + 1
-
-        # Generate LLM response
-        response = llm_with_tools.invoke(state["messages"])
-
-        return {"messages": [response], "step_count": steps}
-
-    # Create a tools node to handle tool execution
-    tool_node = ToolNode(tools=tools)
-
-    # Add nodes to graph
-    graph.add_node("chatbot", chatbot)
-    graph.add_node("tools", tool_node)
-    graph.add_node("run_diagnostics", run_diagnostics_node)
-    graph.add_node("diagnostic_stop", diagnostic_stop_node)
-    graph.add_node("handle_no_results", handle_no_results_node)
-
-    # Add conditional edges from chatbot
-    graph.add_conditional_edges(
-        "chatbot",
-        tools_condition,
-        {
-            "tools": "tools",  # If tools needed, go to tools node
-            END: END,  # Otherwise end
-        },
-    )
-
-    # Enhanced tools conditional logic to handle errors and no-results
-    graph.add_conditional_edges(
-        "tools",
-        result_analysis_condition,
-        {
-            "run_diagnostics": "run_diagnostics",
-            "handle_no_results": "handle_no_results",
-            "continue": "chatbot",  # Normal flow continues to chatbot
-        },
-    )
-
-    # Add conditional edge from diagnostics (check if we can continue)
-    graph.add_conditional_edges(
-        "run_diagnostics",
-        can_continue_condition,
-        {"continue": "chatbot", "stop": "diagnostic_stop"},
-    )
-
-    # No-results handler automatically ends the task
-    graph.add_edge("handle_no_results", END)
-    graph.add_edge("diagnostic_stop", END)
-    graph.add_edge(START, "chatbot")
-
-    # Set up checkpointing
-    memory = MemorySaver()
-
-    # Compile and return the graph
-    return graph.compile(checkpointer=memory)
