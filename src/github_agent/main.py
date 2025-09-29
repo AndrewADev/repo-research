@@ -1,8 +1,7 @@
-import os
-
 import typer
 from dotenv import load_dotenv
 
+from core.config import get_config
 from core.models import TemplatedPrompt, ThreadedPrompt
 from core.prompts import comprehensive_analysis, run_diagnostic, topic_prompt
 from integrations.github.agent import create_graph
@@ -10,34 +9,32 @@ from integrations.github.agent import create_graph
 # Load environment variables
 load_dotenv()
 
-# Configure LLM provider
-provider = os.getenv("LLM_PROVIDER", "ollama")  # Default to ollama
-anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
-ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-model_name = os.getenv("MODEL_NAME", None)
-
-# Create the graph
-graph = create_graph(
-    provider=provider,
-    anthropic_api_key=anthropic_api_key,
-    ollama_base_url=ollama_base_url,
-    model=model_name,
-)
-
 # Configure the execution
 config = {"configurable": {"thread_id": "example_chat"}}
-
-# analysis_prompt = """
-# I need a comprehensive analysis of the most popular AI framework repositories.
-# 1. First, find the top 5 AI framework repositories with more than 10000 stars
-# 2. For each of these repositories, analyze their recent activity
-# 3. Provide a summary of which framework seems to be most actively maintained
-# """
 
 app = typer.Typer(rich_markup_mode="rich")
 
 
-def run_prompt(prompt: ThreadedPrompt):
+def create_configured_graph(model_name_override: str | None = None):
+    """Create a graph with the specified model configuration.
+
+    Args:
+        model_name_override: CLI-provided model name that overrides settings.
+
+    Returns:
+        Configured LangGraph instance
+    """
+    if model_name_override is not None:
+        provider_config = get_config(model_name=model_name_override)
+    else:
+        provider_config = get_config()
+
+    return create_graph(
+        provider_config,
+    )
+
+
+def run_prompt(prompt: ThreadedPrompt, graph):
     # Run the analysis
     try:
         # Initialize with our first message
@@ -90,7 +87,7 @@ def run_prompt(prompt: ThreadedPrompt):
             print("❌ Skipping follow-up prompts due to error.")
 
 
-def run_templated_prompt(prompt: TemplatedPrompt, user_args: list[str]):
+def run_templated_prompt(prompt: TemplatedPrompt, user_args: list[str], graph):
     call_args = {}
 
     # Handle the case where we have multiple user args but only one template key
@@ -126,24 +123,39 @@ def run_templated_prompt(prompt: TemplatedPrompt, user_args: list[str]):
 
 
 @app.command()
-def diagnostics():
+def diagnostics(
+    model_name: str = typer.Option(
+        None, "--model-name", help="Override the model name for this command"
+    ),
+):
     """Diagnose issues with the setup"""
-    run_prompt(run_diagnostic)
+    graph = create_configured_graph(model_name)
+    run_prompt(run_diagnostic, graph)
 
 
 @app.command()
-def analyze():
+def analyze(
+    model_name: str = typer.Option(
+        None, "--model-name", help="Override the model name for this command"
+    ),
+):
     """Run comprehensive analysis of starred repositories"""
-    run_prompt(comprehensive_analysis)
+    graph = create_configured_graph(model_name)
+    run_prompt(comprehensive_analysis, graph)
 
 
 @app.command()
-def topics(topics_raw: str):
+def topics(
+    topics_raw: str,
+    model_name: str = typer.Option(
+        None, "--model-name", help="Override the model name for this command"
+    ),
+):
     """Search for repositories related to specific topics/with specific labels"""
-
+    graph = create_configured_graph(model_name)
     parsed_topics = topics_raw.split(",")
 
-    run_templated_prompt(topic_prompt, parsed_topics)
+    run_templated_prompt(topic_prompt, parsed_topics, graph)
 
 
 if __name__ == "__main__":
