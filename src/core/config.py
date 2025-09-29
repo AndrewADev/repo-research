@@ -17,6 +17,14 @@ class LLMProviderConfig(BaseSettings):
     # Model selection priority: CLI flag > Environment variable > Provider defaults
     model_name: str | None = None
 
+    def get_model_or_default(self):
+        if self.model_name:
+            return self.model_name
+        elif self.llm_provider == "ollama":
+            return "qwen3:8b"
+        else:  # anthropic
+            return "claude-3-opus-20240229"
+
 
 def get_config(**kwargs):
     return LLMProviderConfig(**kwargs)

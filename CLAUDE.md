@@ -44,11 +44,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Running the Application
 - Execute main analysis: `uv run github-agent`
 - Available commands: `uv run github-agent --help`
-- Specific commands:
-  - `uv run github-agent diagnostics` - Diagnose setup issues
-  - `uv run github-agent analyze` - Run comprehensive starred repository analysis
-  - `uv run github-agent topics "ai,machine-learning"` - Search repositories by topics
-- The application runs predefined GitHub analysis workflows using LangGraph
+
+#### Analysis Commands
+- `uv run github-agent diagnostics` - Diagnose setup issues
+- `uv run github-agent analyze` - Run comprehensive starred repository analysis
+- `uv run github-agent topics "ai,machine-learning"` - Search repositories by topics
+- All analysis commands support `--thread-id` flag to resume existing conversations
+
+#### Conversation Management Commands
+- `uv run github-agent history` - List recent conversation history (up to 20 by default)
+  - Use `--limit` or `-n` to change number displayed: `uv run github-agent history -n 50`
+- `uv run github-agent show <thread-id>` - Display full transcript of a conversation
+- `uv run github-agent resume <thread-id>` - Resume and continue an existing conversation interactively
+  - Interactive mode allows multi-turn conversations
+  - Type 'exit' or 'quit' to end the session
+
+#### Conversation Persistence
+- All conversations are automatically saved to `~/.github-agent/conversations.db`
+- Each command execution generates a unique thread ID displayed at completion
+- Use thread IDs to resume conversations or view history
+- The application runs predefined GitHub analysis workflows using LangGraph with full state persistence
 
 ## Architecture Overview
 
@@ -61,28 +76,33 @@ This is a GitHub analysis tool built with LangGraph, configurable LLM providers 
    - Defines analysis prompts for repository analysis
    - Handles streaming responses and conversation flow
    - Provides CLI interface via Typer
+   - Manages thread IDs and conversation persistence
 
-2. **src/tools/github_tools.py** - Core GitHub API integration
-   - `GitHubTools` class provides authenticated GitHub API access
-   - Methods for repository search, starred repos, and activity analysis
-   - Built-in rate limiting and error handling
-   - Supports both authenticated user and public user operations
+2. **src/storage/** - Conversation persistence layer
+   - `conversations.py` - SQLite-based conversation storage
+   - `ConversationStore` class for managing conversation history
+   - Stores messages with roles, content, and metadata
+   - Supports conversation queries and thread management
 
-3. **src/tools/github_adapter.py** - LangGraph integration layer
-   - Defines Pydantic schemas for tool input validation
-   - `StarredRepositoriesTool`, `RepositorySearchTool`, `RepositoryActivityTool`
-   - Creates and configures the LangGraph state machine
+3. **src/integrations/github/** - GitHub API integration
+   - `tools.py` - Core GitHub API integration with `GitHubTools` class
+   - `adapter.py` - LangGraph integration layer with Pydantic schemas
+   - `agent.py` - LangGraph state machine configuration
+   - `models.py` - Pydantic models for tool input validation
    - Supports multiple LLM providers (Ollama, Anthropic) with automatic fallback
-   - Integrates LLMs with GitHub tools using proper tool binding
 
 4. **src/core/** - Core application models and prompts
    - `models.py` - Pydantic models for templated and threaded prompts
    - `prompts.py` - Predefined analysis prompts and workflows
+   - `config.py` - Configuration management for LLM providers
+   - `llm.py` - LLM initialization and setup
 
 ### Key Design Patterns
 
 - **Tool Lifecycle Management**: Uses `@with_github_tools` decorator to ensure proper resource cleanup
-- **State Management**: LangGraph manages conversation state and tool execution flow
+- **State Management**: LangGraph manages conversation state and tool execution flow with checkpointing
+- **Conversation Persistence**: SQLite storage for conversation history with thread-based organization
+- **Thread Management**: Unique thread IDs for each conversation with resume capability
 - **Error Handling**: Comprehensive error handling with JSON responses for tool failures
 - **Rate Limiting**: Built-in GitHub API rate limit handling with automatic backoff
 
@@ -98,13 +118,15 @@ The project uses uv for dependency management with these key libraries:
 ### Workflow Architecture
 
 The application follows a conversational AI pattern where:
-1. User provides analysis prompt
-2. LangGraph orchestrates tool calls based on LLM reasoning (Ollama or Anthropic)
-3. GitHub tools execute API calls with proper authentication
-4. Results are processed and fed back to the LLM for synthesis
-5. Final analysis is streamed back to the user
+1. User provides analysis prompt or resumes existing conversation
+2. Thread ID is generated (new) or validated (resume)
+3. LangGraph orchestrates tool calls based on LLM reasoning (Ollama or Anthropic)
+4. GitHub tools execute API calls with proper authentication
+5. Results are processed and fed back to the LLM for synthesis
+6. Responses are streamed to the user and persisted to SQLite
+7. Thread ID is displayed for future reference or resumption
 
-This architecture enables complex multi-step GitHub analysis workflows while maintaining conversation context and tool state. The flexible LLM provider system allows users to choose between local Ollama models for privacy or cloud-based Anthropic models for performance.
+This architecture enables complex multi-step GitHub analysis workflows while maintaining conversation context, tool state, and full conversation history. The flexible LLM provider system allows users to choose between local Ollama models for privacy or cloud-based Anthropic models for performance. Conversation persistence ensures users can review past analyses and continue multi-session investigations.
 
 ### Development Tools
 
