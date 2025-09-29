@@ -5,7 +5,10 @@ This module provides a unified interface for creating LLM instances from differe
 providers (Ollama, Anthropic) with automatic fallback handling.
 """
 
+from typing import TypeGuard
+
 from langchain_anthropic import ChatAnthropic
+from langchain_core.messages import AIMessage, BaseMessage
 from langchain_ollama import ChatOllama
 
 from core.config import LLMProviderConfig
@@ -33,7 +36,7 @@ def create_llm(
         Exception: If Ollama unavailable and no Anthropic fallback
     """
     if provider_config.llm_provider == "ollama":
-        model_name = provider_config.model_name or "qwen3:8b"
+        model_name = provider_config.get_model_or_default()
         return ChatOllama(
             model=model_name,
             base_url=provider_config.ollama_base_url,
@@ -43,7 +46,7 @@ def create_llm(
     if provider_config.llm_provider == "anthropic":
         if not provider_config.anthropic_api_key:
             raise ValueError("Anthropic API key required for anthropic provider")
-        model_name = provider_config.model_name or "claude-3-opus-20240229"
+        model_name = provider_config.get_model_or_default()
         return ChatAnthropic(
             temperature=temperature,
             model_name=model_name,
@@ -52,3 +55,11 @@ def create_llm(
         )
 
     raise ValueError(f"Unsupported provider: {provider_config.llm_provider}")
+
+
+def is_message(maybe_message: object) -> TypeGuard[BaseMessage]:
+    return hasattr(maybe_message, "type") and hasattr(maybe_message, "content")
+
+
+def is_ai_message(maybe_message: object) -> TypeGuard[AIMessage]:
+    return is_message(maybe_message) and maybe_message.type == "ai"
