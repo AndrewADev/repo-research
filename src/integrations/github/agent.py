@@ -9,6 +9,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 
+from core.config import LLMProviderConfig
 from core.llm import create_llm
 from tools.date_tools import CurrentDateTool, DateOffsetTool
 
@@ -30,22 +31,15 @@ from .models import GitHubToolState
 
 
 def create_graph(
-    provider: str = "ollama",
-    anthropic_api_key: str | None = None,
-    ollama_base_url: str = "http://localhost:11434",
-    model: str | None = None,
+    provider_config: LLMProviderConfig,
     temperature: float = 0,
 ):
     """
     Create a LangGraph for GitHub analysis with configurable LLM provider.
 
     Args:
-        provider: LLM provider ("ollama" or "anthropic")
-        anthropic_api_key: Anthropic API key (required for anthropic provider)
-        ollama_base_url: Ollama server URL
-        model: Model name (defaults based on provider)
+        provider_config: Configuration for model provider
         temperature: Model temperature (0-1)
-        max_steps: Maximum number of steps before forcibly ending
 
     Returns:
         Compiled LangGraph ready for execution
@@ -55,10 +49,7 @@ def create_graph(
 
     # Initialize our LLM
     llm = create_llm(
-        provider=provider,
-        anthropic_api_key=anthropic_api_key,
-        ollama_base_url=ollama_base_url,
-        model=model,
+        provider_config,
         temperature=temperature,
     )
 
