@@ -18,9 +18,10 @@ from typing import TYPE_CHECKING
 from dotenv import load_dotenv
 
 from github import Auth, Github, GithubException
+from github.GithubObject import NotSet
 
 if TYPE_CHECKING:
-    from .models import RepositorySearchByTopicInput
+    from .models import QueryIssuesInput, RepositorySearchByTopicInput
 
 
 def build_repository_search_query(search_params: "RepositorySearchByTopicInput") -> str:
@@ -545,6 +546,63 @@ class GitHubTools:
                     "query_used": query,
                 }
                 results.append(repo_data)
+
+            return results
+
+        except GithubException as e:
+            raise Exception(f"GitHub API error: {str(e)}") from e
+
+    def query_issues(self, query_params: "QueryIssuesInput") -> list[dict]:
+        """
+        Query issues from a repository with filtering and sorting options.
+
+        Args:
+            query_params: QueryIssuesInput with search criteria and filters
+
+        Returns:
+            List of dictionaries containing issue information
+        """
+        try:
+            self._handle_rate_limit()
+
+            repo = self.github.get_repo(query_params.repo_full_name)
+
+            # Get issues with filters
+            issues_paginated = repo.get_issues(
+                state=query_params.state,
+                labels=query_params.labels or [],
+                sort=query_params.sort,
+                direction=query_params.direction,
+                since=query_params.since if query_params.since else NotSet,
+            )
+
+            results = []
+            # Use slice notation for lazy pagination - only fetch what we need
+            for issue in issues_paginated[: query_params.limit * 2]:
+                # Filter out pull requests (GitHub API treats PRs as issues)
+                if issue.pull_request is not None:
+                    continue
+
+                # Extract label names
+                label_names = [label.name for label in issue.labels]
+
+                issue_data = {
+                    "number": issue.number,
+                    "title": issue.title,
+                    "state": issue.state,
+                    "labels": label_names,
+                    "author": issue.user.login if issue.user else None,
+                    "created_at": issue.created_at,
+                    "updated_at": issue.updated_at,
+                    "url": issue.html_url,
+                    "comments_count": issue.comments,
+                    "body": issue.body[:500] if issue.body else None,
+                }
+                results.append(issue_data)
+
+                # Stop once we have enough actual issues (not PRs)
+                if len(results) >= query_params.limit:
+                    break
 
             return results
 
