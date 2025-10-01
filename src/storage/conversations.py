@@ -26,9 +26,17 @@ class ConversationStore:
         self.db_path = db_path
         self._init_db()
 
+    def _get_connection(self):
+        """Get a database connection.
+
+        Note: Caller is responsible for closing the connection.
+        """
+        return sqlite3.connect(self.db_path)
+
     def _init_db(self):
         """Initialize database schema."""
-        with sqlite3.connect(self.db_path) as conn:
+        conn = self._get_connection()
+        try:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS conversations (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -64,6 +72,8 @@ class ConversationStore:
             """)
 
             conn.commit()
+        finally:
+            conn.close()
 
     def create_conversation(
         self,
@@ -85,7 +95,8 @@ class ConversationStore:
         """
         now = datetime.now(UTC).isoformat()
 
-        with sqlite3.connect(self.db_path) as conn:
+        conn = self._get_connection()
+        try:
             cursor = conn.execute(
                 """
                 INSERT INTO conversations
@@ -96,6 +107,8 @@ class ConversationStore:
             )
             conn.commit()
             return cursor.lastrowid
+        finally:
+            conn.close()
 
     def add_message(
         self,
@@ -115,7 +128,8 @@ class ConversationStore:
         now = datetime.now(UTC).isoformat()
         metadata_json = json.dumps(metadata) if metadata else None
 
-        with sqlite3.connect(self.db_path) as conn:
+        conn = self._get_connection()
+        try:
             # Get conversation ID
             cursor = conn.execute(
                 "SELECT id FROM conversations WHERE thread_id = ?", (thread_id,)
@@ -144,6 +158,8 @@ class ConversationStore:
             )
 
             conn.commit()
+        finally:
+            conn.close()
 
     def get_conversation(self, thread_id: str) -> dict[str, Any] | None:
         """Get conversation with all messages.
@@ -154,7 +170,8 @@ class ConversationStore:
         Returns:
             Dictionary with conversation details and messages, or None if not found
         """
-        with sqlite3.connect(self.db_path) as conn:
+        conn = self._get_connection()
+        try:
             conn.row_factory = sqlite3.Row
 
             # Get conversation
@@ -195,6 +212,8 @@ class ConversationStore:
 
             conversation["messages"] = messages
             return conversation
+        finally:
+            conn.close()
 
     def list_conversations(self, limit: int = 20) -> list[dict[str, Any]]:
         """List recent conversations.
@@ -205,7 +224,8 @@ class ConversationStore:
         Returns:
             List of conversation summaries
         """
-        with sqlite3.connect(self.db_path) as conn:
+        conn = self._get_connection()
+        try:
             conn.row_factory = sqlite3.Row
 
             cursor = conn.execute(
@@ -228,6 +248,8 @@ class ConversationStore:
             )
 
             return [dict(row) for row in cursor.fetchall()]
+        finally:
+            conn.close()
 
     def update_summary(self, thread_id: str, summary: str):
         """Update conversation summary.
@@ -238,7 +260,8 @@ class ConversationStore:
         """
         now = datetime.now(UTC).isoformat()
 
-        with sqlite3.connect(self.db_path) as conn:
+        conn = self._get_connection()
+        try:
             conn.execute(
                 """
                 UPDATE conversations
@@ -248,6 +271,8 @@ class ConversationStore:
                 (summary, now, thread_id),
             )
             conn.commit()
+        finally:
+            conn.close()
 
     def delete_conversation(self, thread_id: str) -> bool:
         """Delete a conversation and its messages.
@@ -258,7 +283,8 @@ class ConversationStore:
         Returns:
             True if deleted, False if not found
         """
-        with sqlite3.connect(self.db_path) as conn:
+        conn = self._get_connection()
+        try:
             cursor = conn.execute(
                 "SELECT id FROM conversations WHERE thread_id = ?", (thread_id,)
             )
@@ -279,6 +305,8 @@ class ConversationStore:
 
             conn.commit()
             return True
+        finally:
+            conn.close()
 
     def conversation_exists(self, thread_id: str) -> bool:
         """Check if a conversation exists.
@@ -289,8 +317,11 @@ class ConversationStore:
         Returns:
             True if conversation exists
         """
-        with sqlite3.connect(self.db_path) as conn:
+        conn = self._get_connection()
+        try:
             cursor = conn.execute(
                 "SELECT 1 FROM conversations WHERE thread_id = ? LIMIT 1", (thread_id,)
             )
             return cursor.fetchone() is not None
+        finally:
+            conn.close()
