@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from .models import (
     ActivityAnalysisInput,
     GitHubToolState,
+    QueryIssuesInput,
     RateLimitInput,
     RepositoryLabelsInput,
     RepositorySearchByTopicInput,
@@ -258,6 +259,61 @@ class RepositorySearchByTopicTool(BaseTool):
             return json.dumps({"error": str(e)})
 
 
+class QueryIssuesTool(BaseTool):
+    name: str = "query_issues"
+    description: str = """
+    Query issues from a GitHub repository with advanced filtering and sorting.
+    Useful for finding recent issues, issues with specific labels, or
+    analyzing issue trends. Automatically filters out pull requests,
+    returning only actual issues. Supports filtering by state
+    (open/closed/all), labels, and date ranges.
+    """
+    args_schema: type[BaseModel] = QueryIssuesInput
+
+    @with_github_tools
+    def _run(self, github_tools: GitHubTools | None = None, **kwargs) -> str:
+        """Execute the query issues tool."""
+        try:
+            from .models import QueryIssuesInput
+
+            # Create the query parameters model from the kwargs
+            query_params = QueryIssuesInput(**kwargs)
+
+            results = github_tools.query_issues(query_params)
+
+            # Enhanced response with search metadata
+            response = {
+                "results": results,
+                "search_metadata": {
+                    "repository": query_params.repo_full_name,
+                    "total_found": len(results),
+                    "has_results": len(results) > 0,
+                    "filters_applied": {
+                        "state": query_params.state,
+                        "labels": query_params.labels,
+                        "sort": query_params.sort,
+                        "direction": query_params.direction,
+                        "since": query_params.since,
+                    },
+                },
+            }
+
+            # Add specific messaging for no results
+            if len(results) == 0:
+                response["search_metadata"]["suggestion"] = (
+                    f"No issues found in {query_params.repo_full_name} "
+                    f"with the specified filters. Consider: "
+                    "1) Checking if the repository has issues, "
+                    "2) Trying different state ('all' instead of 'open'), "
+                    "3) Removing or changing label filters, or "
+                    "4) Adjusting the date range."
+                )
+
+            return json.dumps(response, default=str, indent=2)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+
 def result_analysis_condition(state: GitHubToolState) -> str:
     """Analyze tool results for errors and no-results scenarios."""
     messages = state.get("messages", [])
@@ -289,14 +345,17 @@ def result_analysis_condition(state: GitHubToolState) -> str:
 
 def handle_no_results_node(state: GitHubToolState):
     """Handle no-results scenarios by automatically concluding gracefully."""
+    # Get the entity type from state, defaulting to generic "results"
+    entity_type = state.get("current_predicate", "results")
+
     no_results_message = AIMessage(
         content=(
-            "🔍 **No Results Found - Task Concluded**\n\n"
-            "The search didn't return any repositories matching the criteria. "
+            f"🔍 **No Results Found - Task Concluded**\n\n"
+            f"The search didn't return any {entity_type} matching the criteria. "
             "This could indicate:\n\n"
             "- The specific combination of topics/filters is very rare\n"
             "- The search terms might need adjustment\n"
-            "- The desired repositories may not exist or be publicly available\n\n"
+            f"- The desired {entity_type} may not exist or be publicly available\n\n"
             "To try a different search, please run the command again with "
             "different topics or search criteria."
         )

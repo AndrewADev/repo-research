@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Annotated, Literal, TypedDict
 
 from langgraph.graph.message import add_messages
@@ -123,6 +124,32 @@ class RepositorySearchByTopicInput(BaseModel):
     )
 
 
+class QueryIssuesInput(BaseModel):
+    """Input schema for querying repository issues."""
+
+    repo_full_name: str = Field(
+        ..., description="Full repository name (e.g., 'username/repo')"
+    )
+    labels: list[str] | None = Field(
+        None, description="Filter by label names (e.g., ['bug', 'enhancement'])"
+    )
+    state: Literal["open", "closed", "all"] = Field(
+        "open", description="Filter by issue state"
+    )
+    sort: Literal["created", "updated", "comments"] = Field(
+        "created", description="Field to sort by"
+    )
+    direction: Literal["asc", "desc"] = Field(
+        "desc", description="Sort direction (descending shows most recent first)"
+    )
+    limit: int = Field(
+        10, description="Maximum number of results to return", ge=1, le=100
+    )
+    since: datetime | None = Field(
+        None, description="Only show issues updated after this date (ISO 8601 format)"
+    )
+
+
 # Define our graph state
 class GitHubToolState(TypedDict):
     """The state of our GitHub analysis graph."""
@@ -132,3 +159,5 @@ class GitHubToolState(TypedDict):
     messages: Annotated[list, add_messages]
     # Track how many steps we've taken to limit long-running operations
     step_count: int
+    # Track the current entity type being searched for contextual error messages
+    current_predicate: str | None

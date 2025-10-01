@@ -14,6 +14,7 @@ from core.llm import create_llm
 from tools.date_tools import CurrentDateTool, DateOffsetTool
 
 from .adapter import (
+    QueryIssuesTool,
     RateLimitCheckTool,
     RepositoryActivityTool,
     RepositoryLabelsTool,
@@ -62,6 +63,7 @@ def create_graph(
         TokenValidationTool(),
         RepositoryLabelsTool(),
         RepositorySearchByTopicTool(),
+        QueryIssuesTool(),
         CurrentDateTool(),
         DateOffsetTool(),
     ]
@@ -79,12 +81,42 @@ def create_graph(
 
         return {"messages": [response], "step_count": steps}
 
-    # Create a tools node to handle tool execution
-    tool_node = ToolNode(tools=tools)
+    # Create a tools node wrapper that sets current_predicate
+    # NOTE: This is done here due to returning JSON strings instead of state
+    # in the tools
+    base_tool_node = ToolNode(tools=tools)
+
+    def tool_node_with_predicate(state: GitHubToolState):
+        """Wrap tool execution to set current_predicate based on tool being called."""
+        # Determine predicate from the last message's tool calls
+        messages = state.get("messages", [])
+        current_predicate = None
+
+        if messages:
+            last_message = messages[-1]
+            if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+                tool_name = last_message.tool_calls[0].get("name", "")
+                # Map tool names to entity predicates
+                predicate_map = {
+                    "get_starred_repositories": "repositories",
+                    "search_repositories": "repositories",
+                    "search_repositories_by_topic": "repositories",
+                    "query_issues": "issues",
+                }
+                current_predicate = predicate_map.get(tool_name)
+
+        # Execute the base tool node
+        result = base_tool_node.invoke(state)
+
+        # Add current_predicate to the result
+        if current_predicate:
+            result["current_predicate"] = current_predicate
+
+        return result
 
     # Add nodes to graph
     graph.add_node("chatbot", chatbot)
-    graph.add_node("tools", tool_node)
+    graph.add_node("tools", tool_node_with_predicate)
     graph.add_node("run_diagnostics", run_diagnostics_node)
     graph.add_node("diagnostic_stop", diagnostic_stop_node)
     graph.add_node("handle_no_results", handle_no_results_node)
