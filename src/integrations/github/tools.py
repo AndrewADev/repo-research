@@ -236,6 +236,8 @@ class GitHubTools:
 
             activity_data = {
                 "recent_commits": recent_commits,
+                "name": repo.full_name,
+                "description": repo.description,
                 "open_issues": open_issues,
                 "open_pull_requests": open_prs,
                 "stargazers": repo.stargazers_count,
@@ -243,6 +245,7 @@ class GitHubTools:
                 "last_push": repo.pushed_at,
                 "created_at": repo.created_at,
                 "primary_language": repo.language,
+                "topics": repo.topics,
             }
 
             return activity_data
@@ -283,6 +286,7 @@ class GitHubTools:
                     "language": repo.language,
                     "url": repo.html_url,
                     "updated_at": repo.updated_at,
+                    "topics": repo.topics,
                 }
                 results.append(repo_data)
 
