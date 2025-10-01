@@ -4,7 +4,7 @@ from typing import cast
 import typer
 from dotenv import load_dotenv
 
-from core.config import get_config
+from core.config import get_config, get_resolved_model_name
 from core.llm import is_ai_message
 from core.models import TemplatedPrompt, ThreadedPrompt
 from core.prompts import comprehensive_analysis, run_diagnostic, topic_prompt
@@ -15,24 +15,6 @@ from storage import ConversationStore
 load_dotenv()
 
 app = typer.Typer(rich_markup_mode="rich")
-
-
-def get_resolved_model_name(model_name_override: str | None = None) -> str:
-    """Get the actual model name that will be used.
-
-    Args:
-        model_name_override: CLI-provided model name that overrides settings.
-
-    Returns:
-        The resolved model name
-    """
-    if model_name_override is not None:
-        provider_config = get_config(model_name=model_name_override)
-    else:
-        provider_config = get_config()
-
-    # Return the same defaults as create_llm
-    return provider_config.get_model_or_default()
 
 
 def create_configured_graph(model_name_override: str | None = None):
@@ -351,42 +333,14 @@ def show(thread_id: str):
         print(f"\n{'-' * 70}\n")
 
 
-@app.command()
-def resume(
-    thread_id: str,
-    model_name: str = typer.Option(
-        None, "--model-name", help="Override the model name for this command"
-    ),
-):
-    """Resume an existing conversation interactively"""
-    store = ConversationStore()
+def run_interactive_session(graph, thread_id: str, store: ConversationStore):
+    """Run an interactive chat session.
 
-    # Verify conversation exists
-    if not store.conversation_exists(thread_id):
-        typer.echo(f"Error: Conversation {thread_id} not found", err=True)
-        raise typer.Exit(1)
-
-    # Show conversation summary
-    conversation = store.get_conversation(thread_id)
-    print(f"\n🔄 Resuming conversation: {thread_id}")
-    print(f"Command: {conversation['command']}")
-
-    # Use stored model_name unless overridden
-    if model_name is None:
-        model_name = conversation.get("model_name")
-        if model_name:
-            print(f"Model: {model_name} (from conversation)")
-        else:
-            print("Model: Using default")
-    else:
-        print(f"Model: {model_name} (overridden)")
-
-    if conversation["summary"]:
-        print(f"Summary: {conversation['summary']}")
-    print(f"Messages: {len(conversation['messages'])}\n")
-
-    # Create graph with the determined model
-    graph = create_configured_graph(model_name)
+    Args:
+        graph: Configured LangGraph instance
+        thread_id: Thread identifier for the conversation
+        store: ConversationStore instance for persistence
+    """
     config = {"configurable": {"thread_id": thread_id}}
 
     # Interactive loop
@@ -432,6 +386,77 @@ def resume(
         except EOFError:
             print("\n👋 Ending conversation.")
             break
+
+
+@app.command()
+def chat(
+    model_name: str = typer.Option(
+        None, "--model-name", help="Override the model name for this command"
+    ),
+):
+    """Start a new interactive chat session"""
+    # Initialize storage
+    store = ConversationStore()
+
+    # Get the resolved model name
+    resolved_model = get_resolved_model_name(model_name)
+
+    # Generate new thread ID
+    thread_id = str(uuid.uuid4())
+    store.create_conversation(
+        thread_id, "chat", "Interactive chat session", model_name=resolved_model
+    )
+
+    print(f"\n💬 Starting new chat session: {thread_id}")
+    print(f"Model: {resolved_model}\n")
+
+    # Create graph with the specified model
+    graph = create_configured_graph(model_name)
+
+    # Run interactive session
+    run_interactive_session(graph, thread_id, store)
+
+    print(f"\n💾 Conversation saved with thread ID: {thread_id}")
+
+
+@app.command()
+def resume(
+    thread_id: str,
+    model_name: str = typer.Option(
+        None, "--model-name", help="Override the model name for this command"
+    ),
+):
+    """Resume an existing conversation interactively"""
+    store = ConversationStore()
+
+    # Show conversation summary
+    conversation = store.get_conversation(thread_id)
+    if conversation is None:
+        typer.echo(f"Error: Conversation {thread_id} not found", err=True)
+        raise typer.Exit(1)
+
+    print(f"\n🔄 Resuming conversation: {thread_id}")
+    print(f"Command: {conversation['command']}")
+
+    # Use stored model_name unless overridden
+    if model_name is None:
+        model_name = conversation.get("model_name")
+        if model_name:
+            print(f"Model: {model_name} (from conversation)")
+        else:
+            print("Model: Using default")
+    else:
+        print(f"Model: {model_name} (overridden)")
+
+    if conversation["summary"]:
+        print(f"Summary: {conversation['summary']}")
+    print(f"Messages: {len(conversation['messages'])}\n")
+
+    # Create graph with the determined model
+    graph = create_configured_graph(model_name)
+
+    # Run interactive session
+    run_interactive_session(graph, thread_id, store)
 
 
 if __name__ == "__main__":
