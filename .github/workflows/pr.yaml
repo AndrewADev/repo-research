@@ -50,7 +50,7 @@ jobs:
 
     - name: Run tests
       run: |
-        uv run pytest
+        uv run pytest --cov
 
   smoke-tests:
     runs-on: ubuntu-latest

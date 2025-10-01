@@ -58,4 +58,17 @@ dev = [
     "ruff>=0.13.2",
     "pytest>=8.0.0",
     "pytest-mock>=3.10.0",
+    "pytest-cov>=7.0.0",
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["*/tests/*", "*/test_*.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
 ]
