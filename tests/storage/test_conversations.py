@@ -16,9 +16,14 @@ def temp_db():
         yield db_path
 
 
-def test_create_conversation(temp_db):
+@pytest.fixture
+def store(temp_db):
+    """Create a conversation store for testing."""
+    return ConversationStore(temp_db)
+
+
+def test_create_conversation(store):
     """Test creating a new conversation."""
-    store = ConversationStore(temp_db)
     thread_id = "test-thread-1"
 
     conv_id = store.create_conversation(thread_id, "test-command", "Test conversation")
@@ -27,9 +32,8 @@ def test_create_conversation(temp_db):
     assert store.conversation_exists(thread_id)
 
 
-def test_add_message(temp_db):
+def test_add_message(store):
     """Test adding messages to a conversation."""
-    store = ConversationStore(temp_db)
     thread_id = "test-thread-2"
 
     store.create_conversation(thread_id, "test-command", "Test conversation")
@@ -44,10 +48,8 @@ def test_add_message(temp_db):
     assert conversation["messages"][1]["content"] == "Hi there!"
 
 
-def test_list_conversations(temp_db):
+def test_list_conversations(store):
     """Test listing conversations."""
-    store = ConversationStore(temp_db)
-
     # Create multiple conversations
     store.create_conversation("thread-1", "analyze", "Analysis 1")
     store.create_conversation("thread-2", "topics", "Topics search")
@@ -59,9 +61,8 @@ def test_list_conversations(temp_db):
     assert all("command" in conv for conv in conversations)
 
 
-def test_get_conversation(temp_db):
+def test_get_conversation(store):
     """Test retrieving a specific conversation."""
-    store = ConversationStore(temp_db)
     thread_id = "test-thread-3"
 
     store.create_conversation(thread_id, "test-command", "Test conversation")
@@ -74,16 +75,14 @@ def test_get_conversation(temp_db):
     assert len(conversation["messages"]) == 1
 
 
-def test_get_nonexistent_conversation(temp_db):
+def test_get_nonexistent_conversation(store):
     """Test retrieving a conversation that doesn't exist."""
-    store = ConversationStore(temp_db)
     conversation = store.get_conversation("nonexistent-thread")
     assert conversation is None
 
 
-def test_update_summary(temp_db):
+def test_update_summary(store):
     """Test updating conversation summary."""
-    store = ConversationStore(temp_db)
     thread_id = "test-thread-4"
 
     store.create_conversation(thread_id, "test-command", "Original summary")
@@ -96,9 +95,8 @@ def test_update_summary(temp_db):
     assert conversation["summary"] == "Updated summary"
 
 
-def test_delete_conversation(temp_db):
+def test_delete_conversation(store):
     """Test deleting a conversation."""
-    store = ConversationStore(temp_db)
     thread_id = "test-thread-5"
 
     store.create_conversation(thread_id, "test-command", "Test conversation")
@@ -110,16 +108,14 @@ def test_delete_conversation(temp_db):
     assert not store.conversation_exists(thread_id)
 
 
-def test_delete_nonexistent_conversation(temp_db):
+def test_delete_nonexistent_conversation(store):
     """Test deleting a conversation that doesn't exist."""
-    store = ConversationStore(temp_db)
     result = store.delete_conversation("nonexistent-thread")
     assert result is False
 
 
-def test_message_with_metadata(temp_db):
+def test_message_with_metadata(store):
     """Test storing messages with metadata."""
-    store = ConversationStore(temp_db)
     thread_id = "test-thread-6"
 
     store.create_conversation(thread_id, "test-command", "Test conversation")
@@ -135,9 +131,8 @@ def test_message_with_metadata(temp_db):
     assert message["metadata"] == metadata
 
 
-def test_model_name_persistence(temp_db):
+def test_model_name_persistence(store):
     """Test storing and retrieving model_name."""
-    store = ConversationStore(temp_db)
     thread_id = "test-thread-7"
     model_name = "qwen3:8b"
 
@@ -152,10 +147,8 @@ def test_model_name_persistence(temp_db):
     assert conversation["model_name"] == model_name
 
 
-def test_model_name_in_list(temp_db):
+def test_model_name_in_list(store):
     """Test model_name appears in conversation list."""
-    store = ConversationStore(temp_db)
-
     store.create_conversation("thread-1", "analyze", "Analysis", model_name="qwen3:8b")
     store.create_conversation(
         "thread-2", "topics", "Topics", model_name="claude-3-opus-20240229"
