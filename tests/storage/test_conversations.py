@@ -130,3 +130,35 @@ def test_model_name_in_list(store):
     # Reverse-chronological sort by default
     assert conversations[0]["model_name"] == "claude-3-opus-20240229"
     assert conversations[1]["model_name"] == "qwen3:8b"
+
+
+def test_get_most_recent_conversation_with_conversations(store):
+    """Test getting the most recent conversation when conversations exist."""
+    store.create_conversation("thread-1", "analyze", "First")
+    store.create_conversation("thread-2", "topics", "Second")
+    store.create_conversation("thread-3", "diagnostics", "Third")
+
+    recent = store.get_most_recent_conversation()
+    assert recent is not None
+    assert recent["thread_id"] == "thread-3"
+    assert recent["command"] == "diagnostics"
+
+
+def test_get_most_recent_conversation_empty_store(store):
+    """Test getting the most recent conversation when no conversations exist."""
+    recent = store.get_most_recent_conversation()
+    assert recent is None
+
+
+def test_get_most_recent_conversation_returns_latest_updated(store):
+    """Test that get_most_recent_conversation returns the most recently updated."""
+    store.create_conversation("thread-1", "analyze", "First")
+    store.create_conversation("thread-2", "topics", "Second")
+
+    # Update the first conversation to make it most recent
+    store.update_summary("thread-1", "Updated first conversation")
+
+    recent = store.get_most_recent_conversation()
+    assert recent is not None
+    assert recent["thread_id"] == "thread-1"
+    assert recent["summary"] == "Updated first conversation"

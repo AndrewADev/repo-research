@@ -206,6 +206,15 @@ class ConversationStore:
         finally:
             conn.close()
 
+    def get_most_recent_conversation(self) -> dict[str, Any] | None:
+        """Get the most recently updated conversation metadata.
+
+        Returns:
+            Dictionary with conversation metadata, or None if no conversations exist
+        """
+        conversations = self.list_conversations(limit=1)
+        return conversations[0] if conversations else None
+
     def update_summary(self, thread_id: str, summary: str):
         """Update conversation summary in metadata.
 
