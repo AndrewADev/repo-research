@@ -1,4 +1,8 @@
-"""Tests for conversation storage."""
+"""Tests for conversation metadata storage.
+
+Note: These tests focus on conversation metadata only.
+Message persistence is handled by LangGraph's SqliteSaver and tested separately.
+"""
 
 import tempfile
 from pathlib import Path
@@ -19,7 +23,9 @@ def temp_db():
 @pytest.fixture
 def store(temp_db):
     """Create a conversation store for testing."""
-    return ConversationStore(temp_db)
+    store = ConversationStore(temp_db)
+    yield store
+    store.close()
 
 
 def test_create_conversation(store):
@@ -30,22 +36,6 @@ def test_create_conversation(store):
 
     assert conv_id > 0
     assert store.conversation_exists(thread_id)
-
-
-def test_add_message(store):
-    """Test adding messages to a conversation."""
-    thread_id = "test-thread-2"
-
-    store.create_conversation(thread_id, "test-command", "Test conversation")
-    store.add_message(thread_id, "user", "Hello, world!")
-    store.add_message(thread_id, "assistant", "Hi there!")
-
-    conversation = store.get_conversation(thread_id)
-    assert len(conversation["messages"]) == 2
-    assert conversation["messages"][0]["role"] == "user"
-    assert conversation["messages"][0]["content"] == "Hello, world!"
-    assert conversation["messages"][1]["role"] == "assistant"
-    assert conversation["messages"][1]["content"] == "Hi there!"
 
 
 def test_list_conversations(store):
@@ -62,17 +52,17 @@ def test_list_conversations(store):
 
 
 def test_get_conversation(store):
-    """Test retrieving a specific conversation."""
+    """Test retrieving conversation metadata."""
     thread_id = "test-thread-3"
 
     store.create_conversation(thread_id, "test-command", "Test conversation")
-    store.add_message(thread_id, "user", "Test message")
 
     conversation = store.get_conversation(thread_id)
     assert conversation is not None
     assert conversation["thread_id"] == thread_id
     assert conversation["command"] == "test-command"
-    assert len(conversation["messages"]) == 1
+    # Messages come from checkpoints (empty in this test without LangGraph execution)
+    assert "messages" in conversation
 
 
 def test_get_nonexistent_conversation(store):
@@ -96,11 +86,10 @@ def test_update_summary(store):
 
 
 def test_delete_conversation(store):
-    """Test deleting a conversation."""
+    """Test deleting a conversation's metadata."""
     thread_id = "test-thread-5"
 
     store.create_conversation(thread_id, "test-command", "Test conversation")
-    store.add_message(thread_id, "user", "Test message")
 
     assert store.conversation_exists(thread_id)
     result = store.delete_conversation(thread_id)
@@ -112,23 +101,6 @@ def test_delete_nonexistent_conversation(store):
     """Test deleting a conversation that doesn't exist."""
     result = store.delete_conversation("nonexistent-thread")
     assert result is False
-
-
-def test_message_with_metadata(store):
-    """Test storing messages with metadata."""
-    thread_id = "test-thread-6"
-
-    store.create_conversation(thread_id, "test-command", "Test conversation")
-
-    metadata = {"tool_calls": ["search_repos"], "tokens": 150}
-    store.add_message(thread_id, "assistant", "Response", metadata=metadata)
-
-    conversation = store.get_conversation(thread_id)
-    assert conversation is not None, (
-        f"Expected to find conversation with thread_id '{thread_id}'"
-    )
-    message = conversation["messages"][0]
-    assert message["metadata"] == metadata
 
 
 def test_model_name_persistence(store):

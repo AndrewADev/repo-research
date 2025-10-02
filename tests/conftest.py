@@ -34,7 +34,7 @@ class MockConversationStore:
         summary: str | None = None,
         model_name: str | None = None,
     ) -> int:
-        """Create a new conversation."""
+        """Create a new conversation metadata record."""
         now = datetime.now(UTC).isoformat()
         conv_id = len(self.conversations) + 1
 
@@ -49,30 +49,6 @@ class MockConversationStore:
         }
         self.messages[thread_id] = []
         return conv_id
-
-    def add_message(
-        self,
-        thread_id: str,
-        role: str,
-        content: str,
-        metadata: dict[str, Any] | None = None,
-    ):
-        """Add a message to a conversation."""
-        if thread_id not in self.conversations:
-            raise ValueError(f"Conversation with thread_id {thread_id} not found")
-
-        now = datetime.now(UTC).isoformat()
-        self.messages[thread_id].append(
-            {
-                "role": role,
-                "content": content,
-                "metadata": metadata,
-                "created_at": now,
-            }
-        )
-
-        # Update conversation timestamp
-        self.conversations[thread_id]["updated_at"] = now
 
     def get_conversation(self, thread_id: str) -> dict[str, Any] | None:
         """Get conversation with all messages."""
