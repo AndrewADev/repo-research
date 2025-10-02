@@ -13,6 +13,7 @@ dependencies = [
     "langchain",
     "langchain-anthropic",
     "langchain-ollama>=0.3.9",
+    "langchain-huggingface",
     "langgraph>=0.6.8",
     "langgraph-checkpoint-sqlite",
     "langgraph-prebuilt",
@@ -60,6 +61,7 @@ dev = [
     "pytest>=8.0.0",
     "pytest-mock>=3.10.0",
     "pytest-cov>=7.0.0",
+    "pytest-env>=1.1.5",
 ]
 
 [tool.coverage.run]
@@ -72,4 +74,13 @@ exclude_lines = [
     "def __repr__",
     "if __name__ == .__main__.:",
     "if TYPE_CHECKING:",
+]
+
+[tool.pytest.ini_options]
+env = [
+    "LLM_PROVIDER=ollama",
+    "OLLAMA_BASE_URL=http://localhost:11434",
+    "GITHUB_TOKEN=test_github_token_12345",  # pragma: allowlist secret
+    "ANTHROPIC_API_KEY=",
+    "HUGGINGFACE_API_KEY=",
 ]

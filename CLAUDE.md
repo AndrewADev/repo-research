@@ -11,11 +11,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   ```
   GITHUB_TOKEN=your_github_personal_access_token
   # LLM Provider Configuration (defaults to ollama)
-  LLM_PROVIDER=ollama  # or "anthropic"
+  LLM_PROVIDER=ollama  # or "anthropic" or "huggingface"
   # Ollama Configuration (optional, defaults shown)
   OLLAMA_BASE_URL=http://localhost:11434
   # Anthropic Configuration (required if using anthropic provider or as fallback)
   ANTHROPIC_API_KEY=your_anthropic_api_key
+  # HuggingFace Configuration (required if using huggingface provider)
+  HUGGINGFACE_API_KEY=your_huggingface_api_token
   ```
 
 ### LLM Provider Setup
@@ -29,6 +31,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 #### Anthropic Claude
 1. Get API key from https://console.anthropic.com/
 2. Set `LLM_PROVIDER=anthropic` in .env or use as fallback when Ollama unavailable
+
+#### HuggingFace Inference API
+1. Get API token from https://huggingface.co/settings/tokens (free tier available)
+2. Set `LLM_PROVIDER=huggingface` in .env
+3. Default model: `Qwen/Qwen2.5-7B-Instruct`
+4. Free serverless API with rate limits
 
 ### Pre-commit Hooks
 - Install prek: `pip install prek` (or `uv tool install prek`)
@@ -67,7 +75,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture Overview
 
-This is a GitHub analysis tool built with LangGraph, configurable LLM providers (Ollama/Anthropic), and the GitHub API. The system follows a modular architecture with clear separation of concerns:
+This is a GitHub analysis tool built with LangGraph, configurable LLM providers (Ollama/Anthropic/HuggingFace), and the GitHub API. The system follows a modular architecture with clear separation of concerns:
 
 ### Core Components
 
@@ -89,7 +97,7 @@ This is a GitHub analysis tool built with LangGraph, configurable LLM providers 
    - `adapter.py` - LangGraph integration layer with Pydantic schemas
    - `agent.py` - LangGraph state machine configuration
    - `models.py` - Pydantic models for tool input validation
-   - Supports multiple LLM providers (Ollama, Anthropic) with automatic fallback
+   - Supports multiple LLM providers (Ollama, Anthropic, HuggingFace)
 
 4. **src/core/** - Core application models and prompts
    - `models.py` - Pydantic models for templated and threaded prompts
@@ -110,7 +118,7 @@ This is a GitHub analysis tool built with LangGraph, configurable LLM providers 
 
 The project uses uv for dependency management with these key libraries:
 - `pygithub` - GitHub API client
-- `langchain`, `langchain-anthropic`, `langchain-ollama` - LLM framework and provider integrations
+- `langchain`, `langchain-anthropic`, `langchain-ollama`, `langchain-huggingface` - LLM framework and provider integrations
 - `langgraph` - State graph execution framework
 - `python-dotenv` - Environment variable management
 - `pydantic` - Data validation and serialization
@@ -120,13 +128,13 @@ The project uses uv for dependency management with these key libraries:
 The application follows a conversational AI pattern where:
 1. User provides analysis prompt or resumes existing conversation
 2. Thread ID is generated (new) or validated (resume)
-3. LangGraph orchestrates tool calls based on LLM reasoning (Ollama or Anthropic)
+3. LangGraph orchestrates tool calls based on LLM reasoning (Ollama, Anthropic, or HuggingFace)
 4. GitHub tools execute API calls with proper authentication
 5. Results are processed and fed back to the LLM for synthesis
 6. Responses are streamed to the user and persisted to SQLite
 7. Thread ID is displayed for future reference or resumption
 
-This architecture enables complex multi-step GitHub analysis workflows while maintaining conversation context, tool state, and full conversation history. The flexible LLM provider system allows users to choose between local Ollama models for privacy or cloud-based Anthropic models for performance. Conversation persistence ensures users can review past analyses and continue multi-session investigations.
+This architecture enables complex multi-step GitHub analysis workflows while maintaining conversation context, tool state, and full conversation history. The flexible LLM provider system allows users to choose between local Ollama models for privacy, cloud-based Anthropic models for performance, or HuggingFace's free Inference API for access to open-source models. Conversation persistence ensures users can review past analyses and continue multi-session investigations.
 
 ### Development Tools
 

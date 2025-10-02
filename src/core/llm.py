@@ -9,6 +9,7 @@ from typing import TypeGuard
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import AIMessage, BaseMessage
+from langchain_huggingface import ChatHuggingFace, HuggingFaceEndpoint
 from langchain_ollama import ChatOllama
 
 from core.config import LLMProviderConfig
@@ -53,6 +54,18 @@ def create_llm(
             timeout=None,
             stop=["Concluded"],
         )
+
+    if provider_config.llm_provider == "huggingface":
+        if not provider_config.huggingface_api_key:
+            raise ValueError("HuggingFace API key required for huggingface provider")
+        model_name = provider_config.get_model_or_default()
+        llm = HuggingFaceEndpoint(
+            repo_id=model_name,
+            task="text-generation",
+            temperature=temperature,
+            huggingfacehub_api_token=provider_config.huggingface_api_key,
+        )
+        return ChatHuggingFace(llm=llm)
 
     raise ValueError(f"Unsupported provider: {provider_config.llm_provider}")
 
