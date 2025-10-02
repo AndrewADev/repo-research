@@ -404,20 +404,42 @@ def chat(
         print(f"\n💾 Conversation saved with thread ID: {thread_id}")
 
 
-@app.command()
-def resume(
-    thread_id: str,
-    model_name: str = typer.Option(
-        None, "--model-name", help="Override the model name for this command"
-    ),
+def resume_conversation(
+    thread_id: str | None = None,
+    last: bool = False,
+    model_name: str | None = None,
 ):
-    """Resume an existing conversation interactively"""
+    """Core logic for resuming a conversation.
+
+    Args:
+        thread_id: Thread ID to resume
+        last: Whether to resume the most recent conversation
+        model_name: Optional model name override
+
+    Raises:
+        ValueError: If arguments are invalid
+        LookupError: If conversation not found
+    """
     with ConversationStore() as store:
+        # Validate arguments
+        if thread_id and last:
+            raise ValueError("Cannot specify both thread_id and last flag")
+
+        if not thread_id and not last:
+            raise ValueError("Must specify either thread_id or last flag")
+
+        # Get thread_id from most recent conversation if --last is used
+        if last:
+            recent = store.get_most_recent_conversation()
+            if recent is None:
+                raise LookupError("No conversations found")
+            thread_id = recent["thread_id"]
+            print(f"📌 Using most recent conversation: {thread_id}")
+
         # Show conversation summary
         conversation = store.get_conversation(thread_id)
         if conversation is None:
-            typer.echo(f"Error: Conversation {thread_id} not found", err=True)
-            raise typer.Exit(1)
+            raise LookupError(f"Conversation {thread_id} not found")
 
         print(f"\n🔄 Resuming conversation: {thread_id}")
         print(f"Command: {conversation['command']}")
@@ -443,6 +465,29 @@ def resume(
             run_interactive_session(agent, thread_id)
         finally:
             close_agent_resources(agent)
+
+
+@app.command()
+def resume(
+    thread_id: str = typer.Argument(
+        None, help="Thread ID to resume (omit to use --last)"
+    ),
+    last: bool = typer.Option(
+        False, "--last", help="Resume the most recent conversation"
+    ),
+    model_name: str = typer.Option(
+        None, "--model-name", help="Override the model name for this command"
+    ),
+):
+    """Resume an existing conversation interactively"""
+    try:
+        resume_conversation(thread_id=thread_id, last=last, model_name=model_name)
+    except ValueError as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1) from e
+    except LookupError as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1) from e
 
 
 if __name__ == "__main__":

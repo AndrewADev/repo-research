@@ -3,9 +3,8 @@
 import uuid
 
 import pytest
-import typer
 
-from github_agent.main import chat, resume, run_interactive_session
+from github_agent.main import chat, resume_conversation, run_interactive_session
 
 
 @pytest.fixture
@@ -202,8 +201,8 @@ class TestResumeCommand:
         mock_graph = mocker.MagicMock()
         mock_create_graph.return_value = mock_graph
 
-        # Execute resume
-        resume(thread_id=thread_id, model_name=None)
+        # Execute resume using core function
+        resume_conversation(thread_id=thread_id, model_name=None)
 
         # Verify interactive session was started
         mock_run_session.assert_called_once_with(mock_graph, thread_id)
@@ -215,12 +214,31 @@ class TestResumeCommand:
             return_value=mock_store,
         )
 
-        # Execute resume with nonexistent thread and expect typer.Exit exception
-        with pytest.raises(typer.Exit) as exc_info:
-            resume(thread_id="nonexistent-thread", model_name=None)
+        # Execute resume with nonexistent thread and expect LookupError
+        with pytest.raises(LookupError):
+            resume_conversation(thread_id="nonexistent-thread", model_name=None)
 
-        # Verify it exited with error code 1
-        assert exc_info.value.exit_code == 1
+    def test_fails_when_both_thread_id_and_last_specified(self, mock_store, mocker):
+        """Test that resume fails when both thread_id and last are specified."""
+        mocker.patch(
+            "github_agent.main.ConversationStore",
+            return_value=mock_store,
+        )
+
+        # Execute resume with both thread_id and last=True
+        with pytest.raises(ValueError, match="Cannot specify both"):
+            resume_conversation(thread_id="some-thread", last=True, model_name=None)
+
+    def test_fails_when_neither_thread_id_nor_last_specified(self, mock_store, mocker):
+        """Test that resume fails when neither thread_id nor last are specified."""
+        mocker.patch(
+            "github_agent.main.ConversationStore",
+            return_value=mock_store,
+        )
+
+        # Execute resume with neither argument
+        with pytest.raises(ValueError, match="Must specify either"):
+            resume_conversation(model_name=None)
 
 
 class TestIntegration:
@@ -266,7 +284,7 @@ class TestIntegration:
         mock_input.side_effect = ["Hello from resume", "exit"]
 
         # Should not raise exception
-        resume(thread_id=test_uuid, model_name=None)
+        resume_conversation(thread_id=test_uuid, model_name=None)
 
         # Verify conversation still exists
         conversation = mock_store.get_conversation(test_uuid)
