@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-LLMProvider = Literal["ollama", "anthropic"]
+LLMProvider = Literal["ollama", "anthropic", "huggingface"]
 
 
 class LLMProviderConfig(BaseSettings):
@@ -13,6 +13,7 @@ class LLMProviderConfig(BaseSettings):
     llm_provider: LLMProvider = "ollama"
     anthropic_api_key: str | None = None
     ollama_base_url: str = "http://localhost:11434"
+    huggingface_api_key: str | None = None
 
     # Model selection priority: CLI flag > Environment variable > Provider defaults
     model_name: str | None = None
@@ -22,6 +23,8 @@ class LLMProviderConfig(BaseSettings):
             return self.model_name
         elif self.llm_provider == "ollama":
             return "qwen3:8b"
+        elif self.llm_provider == "huggingface":
+            return "Qwen/Qwen2.5-7B-Instruct"
         else:  # anthropic
             return "claude-3-opus-20240229"
 
