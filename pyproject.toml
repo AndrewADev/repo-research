@@ -20,6 +20,7 @@ dependencies = [
     "pydantic",
     "typer",
     "pydantic-settings>=2.11.0",
+    "gradio>=4.0.0",
 ]
 
 [project.scripts]
