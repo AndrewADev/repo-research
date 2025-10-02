@@ -5,7 +5,11 @@ This module creates and configures the LangGraph state machine that orchestrates
 GitHub analysis tasks using the configured LLM provider and GitHub tools.
 """
 
-from langgraph.checkpoint.memory import MemorySaver
+import sqlite3
+from pathlib import Path
+
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 
@@ -33,7 +37,9 @@ from .models import GitHubToolState
 
 def create_graph(
     provider_config: LLMProviderConfig,
+    memory: BaseCheckpointSaver | None = None,
     temperature: float = 0,
+    db_path: str | None = None,
 ):
     """
     Create a LangGraph for GitHub analysis with configurable LLM provider.
@@ -41,9 +47,11 @@ def create_graph(
     Args:
         provider_config: Configuration for model provider
         temperature: Model temperature (0-1)
+        db_path: Path to SQLite database for conversation persistence.
+            Defaults to ~/.github-agent/conversations.db
 
     Returns:
-        Compiled LangGraph ready for execution
+        Tuple of (compiled_graph, sqlite_connection) - caller must close connection
     """
     # Initialize our graph builder
     graph = StateGraph(GitHubToolState)
@@ -154,8 +162,17 @@ def create_graph(
     graph.add_edge("diagnostic_stop", END)
     graph.add_edge(START, "chatbot")
 
-    # Set up checkpointing
-    memory = MemorySaver()
+    # Set up checkpointing with SqliteSaver
+    if db_path is None:
+        home_dir = Path.home()
+        storage_dir = home_dir / ".github-agent"
+        storage_dir.mkdir(exist_ok=True)
+        db_path = str(storage_dir / "conversations.db")
+
+    # Create persistent SQLite connection for checkpointing
+    if not memory:
+        conn = sqlite3.connect(db_path, check_same_thread=False)
+        memory = SqliteSaver(conn)
 
     # Compile and return the graph
-    return graph.compile(checkpointer=memory)
+    return graph.compile(checkpointer=memory, name="GitHubAgent")

@@ -1,21 +1,31 @@
-"""Conversation storage using SQLite."""
+"""Conversation metadata storage using SQLite.
 
-import json
+Note: Message persistence is handled by LangGraph's SqliteSaver.
+This class only manages conversation metadata (command, model, summary, timestamps).
+"""
+
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from langgraph.checkpoint.sqlite import SqliteSaver
+
 
 class ConversationStore:
-    """Manages conversation persistence using SQLite."""
+    """Manages conversation metadata persistence using SQLite.
+
+    Message content is stored and retrieved via LangGraph's SqliteSaver checkpoints.
+    This class handles conversation-level metadata like command, model, summary, etc.
+    """
 
     def __init__(self, db_path: str | None = None):
-        """Initialize conversation store.
+        """Initialize conversation metadata store.
 
         Args:
             db_path: Path to SQLite database.
                 Defaults to ~/.github-agent/conversations.db
+                Note: This should be the same database used by SqliteSaver.
         """
         if db_path is None:
             home_dir = Path.home()
@@ -26,6 +36,24 @@ class ConversationStore:
         self.db_path = db_path
         self._init_db()
 
+        # Create checkpointer for reading messages from LangGraph checkpoints
+        self._checkpoint_conn = sqlite3.connect(db_path, check_same_thread=False)
+        self._checkpointer = SqliteSaver(self._checkpoint_conn)
+
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - close connections."""
+        self.close()
+        return False
+
+    def close(self):
+        """Close database connections."""
+        if hasattr(self, "_checkpoint_conn"):
+            self._checkpoint_conn.close()
+
     def _get_connection(self):
         """Get a database connection.
 
@@ -34,11 +62,16 @@ class ConversationStore:
         return sqlite3.connect(self.db_path)
 
     def _init_db(self):
-        """Initialize database schema."""
+        """Initialize database schema for conversation metadata.
+
+        Note: LangGraph's SqliteSaver creates its own tables for checkpoint storage.
+        We only manage conversation-level metadata here.
+        """
         conn = self._get_connection()
         try:
+            # Create metadata table
             conn.execute("""
-                CREATE TABLE IF NOT EXISTS conversations (
+                CREATE TABLE IF NOT EXISTS conversation_metadata (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     thread_id TEXT UNIQUE NOT NULL,
                     command TEXT NOT NULL,
@@ -50,25 +83,8 @@ class ConversationStore:
             """)
 
             conn.execute("""
-                CREATE TABLE IF NOT EXISTS messages (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    conversation_id INTEGER NOT NULL,
-                    role TEXT NOT NULL,
-                    content TEXT NOT NULL,
-                    metadata TEXT,
-                    created_at TEXT NOT NULL,
-                    FOREIGN KEY (conversation_id) REFERENCES conversations(id)
-                )
-            """)
-
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_conversations_thread_id
-                ON conversations(thread_id)
-            """)
-
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_messages_conversation_id
-                ON messages(conversation_id)
+                CREATE INDEX IF NOT EXISTS idx_conversation_metadata_thread_id
+                ON conversation_metadata(thread_id)
             """)
 
             conn.commit()
@@ -82,16 +98,16 @@ class ConversationStore:
         summary: str | None = None,
         model_name: str | None = None,
     ) -> int:
-        """Create a new conversation.
+        """Create a new conversation metadata record.
 
         Args:
-            thread_id: Unique thread identifier
+            thread_id: Unique thread identifier (used by LangGraph checkpointer)
             command: Command that started the conversation
             summary: Optional summary of the conversation
             model_name: Optional model name used for this conversation
 
         Returns:
-            Conversation ID
+            Metadata record ID
         """
         now = datetime.now(UTC).isoformat()
 
@@ -99,7 +115,7 @@ class ConversationStore:
         try:
             cursor = conn.execute(
                 """
-                INSERT INTO conversations
+                INSERT INTO conversation_metadata
                 (thread_id, command, model_name, summary, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?)
             """,
@@ -110,77 +126,26 @@ class ConversationStore:
         finally:
             conn.close()
 
-    def add_message(
-        self,
-        thread_id: str,
-        role: str,
-        content: str,
-        metadata: dict[str, Any] | None = None,
-    ):
-        """Add a message to a conversation.
-
-        Args:
-            thread_id: Thread identifier
-            role: Message role (user, assistant, system, etc.)
-            content: Message content
-            metadata: Optional metadata dictionary
-        """
-        now = datetime.now(UTC).isoformat()
-        metadata_json = json.dumps(metadata) if metadata else None
-
-        conn = self._get_connection()
-        try:
-            # Get conversation ID
-            cursor = conn.execute(
-                "SELECT id FROM conversations WHERE thread_id = ?", (thread_id,)
-            )
-            row = cursor.fetchone()
-
-            if row is None:
-                raise ValueError(f"Conversation with thread_id {thread_id} not found")
-
-            conversation_id = row[0]
-
-            # Insert message
-            conn.execute(
-                """
-                INSERT INTO messages
-                (conversation_id, role, content, metadata, created_at)
-                VALUES (?, ?, ?, ?, ?)
-            """,
-                (conversation_id, role, content, metadata_json, now),
-            )
-
-            # Update conversation timestamp
-            conn.execute(
-                "UPDATE conversations SET updated_at = ? WHERE id = ?",
-                (now, conversation_id),
-            )
-
-            conn.commit()
-        finally:
-            conn.close()
-
     def get_conversation(self, thread_id: str) -> dict[str, Any] | None:
-        """Get conversation with all messages.
+        """Get conversation metadata with messages from LangGraph checkpoints.
 
         Args:
             thread_id: Thread identifier
 
         Returns:
-            Dictionary with conversation details and messages, or None if not found
+            Dictionary with conversation metadata and messages, or None if not found
         """
         conn = self._get_connection()
         try:
             conn.row_factory = sqlite3.Row
 
-            # Get conversation
+            # Get conversation metadata
             cursor = conn.execute(
                 """
                 SELECT
                     id, thread_id, command, model_name, summary,
                     created_at, updated_at
-                FROM conversations
+                FROM conversation_metadata
                 WHERE thread_id = ?
             """,
                 (thread_id,),
@@ -192,37 +157,22 @@ class ConversationStore:
 
             conversation = dict(conv_row)
 
-            # Get messages
-            cursor = conn.execute(
-                """
-                SELECT role, content, metadata, created_at
-                FROM messages
-                WHERE conversation_id = ?
-                ORDER BY created_at ASC
-            """,
-                (conversation["id"],),
-            )
-
-            messages = []
-            for msg_row in cursor.fetchall():
-                msg = dict(msg_row)
-                if msg["metadata"]:
-                    msg["metadata"] = json.loads(msg["metadata"])
-                messages.append(msg)
-
+            # Get messages from LangGraph checkpoints
+            messages = self.get_messages_from_checkpoints(thread_id)
             conversation["messages"] = messages
+
             return conversation
         finally:
             conn.close()
 
     def list_conversations(self, limit: int = 20) -> list[dict[str, Any]]:
-        """List recent conversations.
+        """List recent conversations with message counts from checkpoints.
 
         Args:
             limit: Maximum number of conversations to return
 
         Returns:
-            List of conversation summaries
+            List of conversation summaries with metadata
         """
         conn = self._get_connection()
         try:
@@ -231,28 +181,33 @@ class ConversationStore:
             cursor = conn.execute(
                 """
                 SELECT
-                    c.thread_id,
-                    c.command,
-                    c.model_name,
-                    c.summary,
-                    c.created_at,
-                    c.updated_at,
-                    COUNT(m.id) as message_count
-                FROM conversations c
-                LEFT JOIN messages m ON c.id = m.conversation_id
-                GROUP BY c.id
-                ORDER BY c.updated_at DESC
+                    thread_id,
+                    command,
+                    model_name,
+                    summary,
+                    created_at,
+                    updated_at
+                FROM conversation_metadata
+                ORDER BY updated_at DESC
                 LIMIT ?
             """,
                 (limit,),
             )
 
-            return [dict(row) for row in cursor.fetchall()]
+            conversations = []
+            for row in cursor.fetchall():
+                conv = dict(row)
+                # Get message count from checkpoints
+                messages = self.get_messages_from_checkpoints(conv["thread_id"])
+                conv["message_count"] = len(messages)
+                conversations.append(conv)
+
+            return conversations
         finally:
             conn.close()
 
     def update_summary(self, thread_id: str, summary: str):
-        """Update conversation summary.
+        """Update conversation summary in metadata.
 
         Args:
             thread_id: Thread identifier
@@ -264,7 +219,7 @@ class ConversationStore:
         try:
             conn.execute(
                 """
-                UPDATE conversations
+                UPDATE conversation_metadata
                 SET summary = ?, updated_at = ?
                 WHERE thread_id = ?
             """,
@@ -275,7 +230,9 @@ class ConversationStore:
             conn.close()
 
     def delete_conversation(self, thread_id: str) -> bool:
-        """Delete a conversation and its messages.
+        """Delete a conversation's metadata.
+
+        Note: LangGraph checkpoints are not deleted; only metadata is removed.
 
         Args:
             thread_id: Thread identifier
@@ -286,22 +243,17 @@ class ConversationStore:
         conn = self._get_connection()
         try:
             cursor = conn.execute(
-                "SELECT id FROM conversations WHERE thread_id = ?", (thread_id,)
+                "SELECT id FROM conversation_metadata WHERE thread_id = ?", (thread_id,)
             )
             row = cursor.fetchone()
 
             if row is None:
                 return False
 
-            conversation_id = row[0]
-
-            # Delete messages first (foreign key constraint)
+            # Delete metadata record
             conn.execute(
-                "DELETE FROM messages WHERE conversation_id = ?", (conversation_id,)
+                "DELETE FROM conversation_metadata WHERE thread_id = ?", (thread_id,)
             )
-
-            # Delete conversation
-            conn.execute("DELETE FROM conversations WHERE id = ?", (conversation_id,))
 
             conn.commit()
             return True
@@ -309,19 +261,72 @@ class ConversationStore:
             conn.close()
 
     def conversation_exists(self, thread_id: str) -> bool:
-        """Check if a conversation exists.
+        """Check if a conversation metadata record exists.
 
         Args:
             thread_id: Thread identifier
 
         Returns:
-            True if conversation exists
+            True if conversation metadata exists
         """
         conn = self._get_connection()
         try:
             cursor = conn.execute(
-                "SELECT 1 FROM conversations WHERE thread_id = ? LIMIT 1", (thread_id,)
+                "SELECT 1 FROM conversation_metadata WHERE thread_id = ? LIMIT 1",
+                (thread_id,),
             )
             return cursor.fetchone() is not None
         finally:
             conn.close()
+
+    def get_messages_from_checkpoints(self, thread_id: str) -> list[dict[str, Any]]:
+        """Extract messages from LangGraph checkpoints for a conversation.
+
+        Args:
+            thread_id: Thread identifier
+
+        Returns:
+            List of message dictionaries with role, content, and created_at fields
+        """
+        messages = []
+        config = {"configurable": {"thread_id": thread_id}}
+
+        try:
+            # Get all checkpoints for this thread
+            checkpoints = list(self._checkpointer.list(config))
+
+            if not checkpoints:
+                return messages
+
+            # Get the most recent checkpoint (first in list)
+            latest_checkpoint = checkpoints[0]
+
+            # Extract messages from checkpoint state
+            checkpoint_value = latest_checkpoint.checkpoint
+            if checkpoint_value and "channel_values" in checkpoint_value:
+                channel_values = checkpoint_value["channel_values"]
+                if "messages" in channel_values:
+                    for msg in channel_values["messages"]:
+                        # Convert LangChain message to dict format
+                        role = (
+                            "user"
+                            if hasattr(msg, "type") and msg.type == "human"
+                            else "assistant"
+                        )
+                        content = msg.content if hasattr(msg, "content") else str(msg)
+
+                        messages.append(
+                            {
+                                "role": role,
+                                "content": content,
+                                "created_at": latest_checkpoint.metadata.get(
+                                    "created_at", ""
+                                ),
+                            }
+                        )
+
+        except Exception:
+            # If checkpoints don't exist or can't be read, return empty list
+            pass
+
+        return messages

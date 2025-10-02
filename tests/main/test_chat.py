@@ -25,7 +25,11 @@ class TestRunInteractiveSession:
     def test_handles_user_input_and_stores_messages(
         self, mock_store, mock_graph, mocker
     ):
-        """Test that user input and assistant responses are processed and stored."""
+        """Test that user input and assistant responses are processed.
+
+        Note: Messages are now persisted by LangGraph's SqliteSaver automatically,
+        so we just verify that the graph was invoked correctly.
+        """
         thread_id = str(uuid.uuid4())
         mock_store.create_conversation(thread_id, "chat", "Test session")
 
@@ -33,19 +37,13 @@ class TestRunInteractiveSession:
         mock_input = mocker.patch("builtins.input")
         mock_input.side_effect = ["Hello", "exit"]
 
-        # Mock is_ai_message to return True for our mock messages
-        mocker.patch("github_agent.main.is_ai_message", return_value=True)
+        run_interactive_session(mock_graph, thread_id)
 
-        run_interactive_session(mock_graph, thread_id, mock_store)
-
-        # Verify both user and assistant messages were stored
-        conversation = mock_store.get_conversation(thread_id)
-        assert conversation is not None, "Expected conversation to exist"
-        assert len(conversation["messages"]) == 2  # User message + assistant response
-        assert conversation["messages"][0]["role"] == "user"
-        assert conversation["messages"][0]["content"] == "Hello"
-        assert conversation["messages"][1]["role"] == "assistant"
-        assert conversation["messages"][1]["content"] == "Test response"
+        # Verify graph.stream was called with the user input
+        mock_graph.stream.assert_called_once()
+        call_args = mock_graph.stream.call_args
+        assert call_args[0][0]["messages"][0] == ("user", "Hello")
+        assert call_args[0][1]["configurable"]["thread_id"] == thread_id
 
     @pytest.mark.parametrize("exit_command", ["exit", "quit"])
     def test_handles_exit_commands(self, mock_store, mock_graph, mocker, exit_command):
@@ -56,7 +54,7 @@ class TestRunInteractiveSession:
         mock_input = mocker.patch("builtins.input")
         mock_input.side_effect = [exit_command]
 
-        run_interactive_session(mock_graph, thread_id, mock_store)
+        run_interactive_session(mock_graph, thread_id)
 
         # No messages should be stored when exiting immediately
         conversation = mock_store.get_conversation(thread_id)
@@ -74,7 +72,7 @@ class TestRunInteractiveSession:
         mock_input = mocker.patch("builtins.input")
         mock_input.side_effect = inputs
 
-        run_interactive_session(mock_graph, thread_id, mock_store)
+        run_interactive_session(mock_graph, thread_id)
 
         # No messages should be stored from empty inputs
         conversation = mock_store.get_conversation(thread_id)
@@ -90,7 +88,7 @@ class TestRunInteractiveSession:
         mock_input.side_effect = KeyboardInterrupt()
 
         # Should not raise exception
-        run_interactive_session(mock_graph, thread_id, mock_store)
+        run_interactive_session(mock_graph, thread_id)
 
     def test_handles_eof_error(self, mock_store, mock_graph, mocker):
         """Test that EOF (Ctrl+D) exits gracefully."""
@@ -101,7 +99,7 @@ class TestRunInteractiveSession:
         mock_input.side_effect = EOFError()
 
         # Should not raise exception
-        run_interactive_session(mock_graph, thread_id, mock_store)
+        run_interactive_session(mock_graph, thread_id)
 
 
 class TestChatCommand:
@@ -111,7 +109,7 @@ class TestChatCommand:
         """Test that chat command creates a new conversation."""
         # Mock dependencies
         mock_run_session = mocker.patch("github_agent.main.run_interactive_session")
-        mock_create_graph = mocker.patch("github_agent.main.create_configured_graph")
+        mock_create_graph = mocker.patch("github_agent.main.create_configured_agent")
 
         # Mock the conversation store to use our test store
         mocker.patch(
@@ -143,13 +141,13 @@ class TestChatCommand:
         assert conversation["model_name"] == "qwen3:8b"
 
         # Verify interactive session was started
-        mock_run_session.assert_called_once_with(mock_graph, test_uuid, mocker.ANY)
+        mock_run_session.assert_called_once_with(mock_graph, test_uuid)
 
     def test_uses_custom_model_name(self, mock_store, mocker):
         """Test that chat command respects custom model_name."""
         # Mock dependencies
         mocker.patch("github_agent.main.run_interactive_session")
-        mock_create_graph = mocker.patch("github_agent.main.create_configured_graph")
+        mock_create_graph = mocker.patch("github_agent.main.create_configured_agent")
 
         mocker.patch(
             "github_agent.main.ConversationStore",
@@ -182,16 +180,19 @@ class TestResumeCommand:
     """Tests for the resume command (after refactoring)."""
 
     def test_resumes_existing_conversation(self, mock_store, mocker):
-        """Test that resume command works with existing conversation."""
+        """Test that resume command works with existing conversation.
+
+        Note: Messages are now persisted by LangGraph's SqliteSaver,
+        not in ConversationStore.
+        """
         # Mock dependencies
         mock_run_session = mocker.patch("github_agent.main.run_interactive_session")
-        mock_create_graph = mocker.patch("github_agent.main.create_configured_graph")
+        mock_create_graph = mocker.patch("github_agent.main.create_configured_agent")
 
         thread_id = str(uuid.uuid4())
         mock_store.create_conversation(
             thread_id, "chat", "Previous session", model_name="qwen3:8b"
         )
-        mock_store.add_message(thread_id, "user", "Previous message")
 
         mocker.patch(
             "github_agent.main.ConversationStore",
@@ -205,7 +206,7 @@ class TestResumeCommand:
         resume(thread_id=thread_id, model_name=None)
 
         # Verify interactive session was started
-        mock_run_session.assert_called_once_with(mock_graph, thread_id, mocker.ANY)
+        mock_run_session.assert_called_once_with(mock_graph, thread_id)
 
     def test_fails_on_nonexistent_conversation(self, mock_store, mocker):
         """Test that resume fails gracefully for nonexistent conversation."""
@@ -226,9 +227,13 @@ class TestIntegration:
     """Integration tests for chat and resume workflow."""
 
     def test_chat_creates_resumable_conversation(self, mock_store, mocker):
-        """Test that a chat session can be resumed later."""
+        """Test that a chat session can be resumed later.
+
+        Note: Messages are now persisted by LangGraph's SqliteSaver,
+        so we verify the conversation metadata exists and can be resumed.
+        """
         # Setup mocks
-        mock_create_graph = mocker.patch("github_agent.main.create_configured_graph")
+        mock_create_graph = mocker.patch("github_agent.main.create_configured_agent")
 
         mock_graph = mocker.MagicMock()
         mock_message = mocker.MagicMock()
@@ -240,7 +245,6 @@ class TestIntegration:
         mocker.patch(
             "github_agent.main.get_resolved_model_name", return_value="qwen3:8b"
         )
-        mocker.patch("github_agent.main.is_ai_message", return_value=True)
 
         test_uuid = str(uuid.uuid4())
         mocker.patch("github_agent.main.uuid.uuid4", return_value=test_uuid)
@@ -252,18 +256,18 @@ class TestIntegration:
         # Execute chat command
         chat(model_name=None)
 
-        # Verify conversation was created and has messages
+        # Verify conversation metadata was created
         conversation = mock_store.get_conversation(test_uuid)
         assert conversation is not None
-        assert len(conversation["messages"]) == 2
+        assert conversation["thread_id"] == test_uuid
+        assert conversation["command"] == "chat"
 
         # Now resume the conversation
         mock_input.side_effect = ["Hello from resume", "exit"]
 
+        # Should not raise exception
         resume(thread_id=test_uuid, model_name=None)
 
-        # Verify new messages were added
+        # Verify conversation still exists
         conversation = mock_store.get_conversation(test_uuid)
         assert conversation is not None, "Expected conversation to exist"
-        assert len(conversation["messages"]) == 4  # 2 from chat + 2 from resume
-        assert conversation["messages"][2]["content"] == "Hello from resume"
