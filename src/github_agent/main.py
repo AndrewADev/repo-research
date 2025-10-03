@@ -3,6 +3,7 @@ import uuid
 import typer
 from dotenv import load_dotenv
 from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph.state import CompiledStateGraph
 
 from core.config import get_config, get_resolved_model_name
@@ -40,11 +41,12 @@ def create_configured_agent(
 
 
 def close_agent_resources(graph: CompiledStateGraph):
-    if hasattr(graph.checkpointer, "conn"):
-        if hasattr(graph.checkpointer.conn, "close") and callable(  # type: ignore
-            graph.checkpointer.conn.close  # type: ignore
+    """Close checkpointer database connection if present."""
+    if isinstance(graph.checkpointer, SqliteSaver):
+        if hasattr(graph.checkpointer.conn, "close") and callable(
+            graph.checkpointer.conn.close
         ):
-            graph.checkpointer.conn.close()  # type: ignore
+            graph.checkpointer.conn.close()
 
 
 def run_prompt(prompt: ThreadedPrompt, graph, thread_id: str):
