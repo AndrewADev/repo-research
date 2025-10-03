@@ -8,10 +8,15 @@ models for input validation and schema generation.
 
 import json
 from functools import wraps
+from typing import Annotated
 
-from langchain.tools import BaseTool
-from langchain_core.messages import AIMessage
+from langchain.tools import BaseTool, StructuredTool
+from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.tools import InjectedToolCallId
+from langgraph.types import Command
 from pydantic import BaseModel
+
+from tools.utils import generate_tool_call_id
 
 from .models import (
     ActivityAnalysisInput,
@@ -19,12 +24,43 @@ from .models import (
     QueryIssuesInput,
     RateLimitInput,
     RepositoryLabelsInput,
+    RepositoryRecord,
     RepositorySearchByTopicInput,
     SearchRepoInput,
     StarredRepoInput,
     TokenValidationInput,
 )
 from .tools import GitHubTools
+
+
+def parse_repository_data(repo_dict: dict) -> RepositoryRecord:
+    """
+    Convert a repository dictionary from tools.py into a RepositoryRecord.
+
+    Args:
+        repo_dict: Repository data dictionary from GitHub API
+
+    Returns:
+        RepositoryRecord instance
+    """
+    return RepositoryRecord(
+        name=repo_dict.get("name", ""),
+        description=repo_dict.get("description"),
+        stars=repo_dict.get("stars", 0),
+        forks=repo_dict.get("forks", 0),
+        language=repo_dict.get("language"),
+        url=repo_dict.get("url", ""),
+        updated_at=repo_dict.get("updated_at"),
+        created_at=repo_dict.get("created_at"),
+        pushed_at=repo_dict.get("pushed_at"),
+        topics=repo_dict.get("topics", []),
+        open_issues=repo_dict.get("open_issues", 0),
+        size=repo_dict.get("size"),
+        archived=repo_dict.get("archived", False),
+        fork=repo_dict.get("fork", False),
+        private=repo_dict.get("private", False),
+        license=repo_dict.get("license"),
+    )
 
 
 def with_github_tools(func):
@@ -54,8 +90,9 @@ class StarredRepositoriesTool(BaseTool):
         self,
         username: str | None = None,
         sort_by: str = "stars",
+        tool_call_id: Annotated[str, InjectedToolCallId] = None,
         github_tools: GitHubTools | None = None,
-    ) -> str:
+    ) -> Command:
         """Execute the starred repositories tool."""
         try:
             repos = github_tools.get_starred_repositories(username, sort_by)
@@ -81,12 +118,37 @@ class StarredRepositoriesTool(BaseTool):
                     "3) Trying a different user, or 4) Asking for alternative analysis."
                 )
 
-            return json.dumps(response, default=str, indent=2)
+            # Convert repos to RepositoryRecord objects
+            tracked_repos = [parse_repository_data(repo) for repo in repos]
+
+            # Return Command to update state
+            return Command(
+                update={
+                    "tracked_repositories": tracked_repos,
+                    "messages": [
+                        ToolMessage(
+                            content=json.dumps(response, default=str, indent=2),
+                            tool_call_id=tool_call_id,
+                            name=self.name,
+                        )
+                    ],
+                }
+            )
         except Exception as e:
-            return json.dumps({"error": str(e)})
+            return Command(
+                update={
+                    "messages": [
+                        ToolMessage(
+                            content=json.dumps({"error": str(e)}),
+                            tool_call_id=tool_call_id,
+                            name=self.name,
+                        )
+                    ],
+                }
+            )
 
 
-class RepositorySearchTool(BaseTool):
+class RepositorySearchTool(StructuredTool):
     name: str = "search_repositories"
     description: str = """
     Search for GitHub repositories matching specific criteria.
@@ -100,8 +162,9 @@ class RepositorySearchTool(BaseTool):
         query: str,
         sort: str = "stars",
         limit: int = 10,
+        tool_call_id: Annotated[str, InjectedToolCallId] = None,
         github_tools: GitHubTools | None = None,
-    ) -> str:
+    ) -> Command:
         """Execute the repository search tool."""
         try:
             results = github_tools.search_repositories(query, sort, limit)
@@ -125,13 +188,38 @@ class RepositorySearchTool(BaseTool):
                     "4) Asking the user for alternative search criteria."
                 )
 
-            return json.dumps(response, default=str, indent=2)
+            # Convert repos to RepositoryRecord objects
+            tracked_repos = [parse_repository_data(repo) for repo in results]
+
+            # Return Command to update state
+            return Command(
+                update={
+                    "tracked_repositories": tracked_repos,
+                    "messages": [
+                        ToolMessage(
+                            content=json.dumps(response, default=str, indent=2),
+                            tool_call_id=tool_call_id,
+                            name=self.name,
+                        )
+                    ],
+                }
+            )
         except Exception as e:
-            return json.dumps({"error": str(e)})
+            return Command(
+                update={
+                    "messages": [
+                        ToolMessage(
+                            content=json.dumps({"error": str(e)}),
+                            tool_call_id=tool_call_id,
+                            name=self.name,
+                        )
+                    ],
+                }
+            )
 
 
 # @tool(args_schema=ActivityAnalysisInput)
-class RepositoryActivityTool(BaseTool):
+class RepositoryActivityTool(StructuredTool):
     name: str = "analyze_repository_activity"
     description: str = """
     Analyze recent activity in a GitHub repository.
@@ -149,7 +237,7 @@ class RepositoryActivityTool(BaseTool):
             return json.dumps({"error": str(e)})
 
 
-class RateLimitCheckTool(BaseTool):
+class RateLimitCheckTool(StructuredTool):
     name: str = "check_rate_limit_status"
     description: str = """
     Check the current GitHub API rate limit status for the configured token.
@@ -168,7 +256,7 @@ class RateLimitCheckTool(BaseTool):
             return json.dumps({"error": str(e)})
 
 
-class TokenValidationTool(BaseTool):
+class TokenValidationTool(StructuredTool):
     name: str = "validate_github_token"
     description: str = """
     Validate the GitHub token and return detailed information about its capabilities.
@@ -188,7 +276,7 @@ class TokenValidationTool(BaseTool):
             return json.dumps({"error": str(e)})
 
 
-class RepositoryLabelsTool(BaseTool):
+class RepositoryLabelsTool(StructuredTool):
     name: str = "get_repository_labels"
     description: str = """
     Retrieve all labels from a specific GitHub repository.
@@ -209,7 +297,7 @@ class RepositoryLabelsTool(BaseTool):
             return json.dumps({"error": str(e)})
 
 
-class RepositorySearchByTopicTool(BaseTool):
+class RepositorySearchByTopicTool(StructuredTool):
     name: str = "search_repositories_by_topic"
     description: str = """
     Search for GitHub repositories that have specific topics assigned.
@@ -219,13 +307,22 @@ class RepositorySearchByTopicTool(BaseTool):
     args_schema: type[BaseModel] = RepositorySearchByTopicInput
 
     @with_github_tools
-    def _run(self, github_tools: GitHubTools | None = None, **kwargs) -> str:
+    def _run(
+        self,
+        tool_call_id: Annotated[str, InjectedToolCallId] = None,
+        github_tools: GitHubTools | None = None,
+        **kwargs,
+    ) -> Command:
         """Execute the repository search by topic tool."""
         try:
-            from .models import RepositorySearchByTopicInput
-
             # Create the search parameters model from the kwargs
             search_params = RepositorySearchByTopicInput(**kwargs)
+
+            tool_call_id = (
+                generate_tool_call_id("search_repositories_by_topic")
+                if tool_call_id is None
+                else tool_call_id
+            )
 
             results = github_tools.search_repositories_by_topic(search_params)
 
@@ -254,12 +351,37 @@ class RepositorySearchByTopicTool(BaseTool):
                     "4) Asking the user for alternative topics to search."
                 )
 
-            return json.dumps(response, default=str, indent=2)
+            # Convert repos to RepositoryRecord objects
+            tracked_repos = [parse_repository_data(repo) for repo in results]
+
+            # Return Command to update state
+            return Command(
+                update={
+                    "tracked_repositories": tracked_repos,
+                    "messages": [
+                        ToolMessage(
+                            content=json.dumps(response, default=str, indent=2),
+                            tool_call_id=tool_call_id,
+                            name=self.name,
+                        )
+                    ],
+                }
+            )
         except Exception as e:
-            return json.dumps({"error": str(e)})
+            return Command(
+                update={
+                    "messages": [
+                        ToolMessage(
+                            content=json.dumps({"error": str(e)}),
+                            tool_call_id=tool_call_id,
+                            name=self.name,
+                        )
+                    ],
+                }
+            )
 
 
-class QueryIssuesTool(BaseTool):
+class QueryIssuesTool(StructuredTool):
     name: str = "query_issues"
     description: str = """
     Query issues from a GitHub repository with advanced filtering and sorting.
@@ -274,8 +396,6 @@ class QueryIssuesTool(BaseTool):
     def _run(self, github_tools: GitHubTools | None = None, **kwargs) -> str:
         """Execute the query issues tool."""
         try:
-            from .models import QueryIssuesInput
-
             # Create the query parameters model from the kwargs
             query_params = QueryIssuesInput(**kwargs)
 

@@ -5,6 +5,27 @@ from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
 
 
+class RepositoryRecord(BaseModel):
+    """Internal model for tracking repositories in state."""
+
+    name: str = Field(..., description="Full repository name (e.g., 'username/repo')")
+    description: str | None = Field(None, description="Repository description")
+    stars: int = Field(..., description="Number of stargazers")
+    forks: int | None = Field(0, description="Number of forks")
+    language: str | None = Field(None, description="Primary programming language")
+    url: str = Field(..., description="HTML URL to the repository")
+    updated_at: datetime | None = Field(None, description="Last updated timestamp")
+    created_at: datetime | None = Field(None, description="Creation timestamp")
+    pushed_at: datetime | None = Field(None, description="Last push timestamp")
+    topics: list[str] = Field(default_factory=list, description="Repository topics")
+    open_issues: int = Field(0, description="Number of open issues")
+    size: int | None = Field(None, description="Repository size in KB")
+    archived: bool = Field(False, description="Whether repository is archived")
+    fork: bool = Field(False, description="Whether repository is a fork")
+    private: bool = Field(False, description="Whether repository is private")
+    license: str | None = Field(None, description="License key")
+
+
 # Define input schemas for our tools
 class StarredRepoInput(BaseModel):
     """Input schema for starred repositories tool."""
@@ -150,6 +171,24 @@ class QueryIssuesInput(BaseModel):
     )
 
 
+def add_repositories(
+    existing: list[RepositoryRecord] | None, new: list[RepositoryRecord]
+) -> list[RepositoryRecord]:
+    """
+    Reducer function for tracked_repositories that appends new repositories.
+
+    Args:
+        existing: Current list of tracked repositories
+        new: New repositories to add
+
+    Returns:
+        Combined list of repositories
+    """
+    if existing is None:
+        return new
+    return existing + new
+
+
 # Define our graph state
 class GitHubToolState(TypedDict):
     """The state of our GitHub analysis graph."""
@@ -161,3 +200,5 @@ class GitHubToolState(TypedDict):
     step_count: int
     # Track the current entity type being searched for contextual error messages
     current_predicate: str | None
+    # Track repositories returned by tools for downstream access
+    tracked_repositories: Annotated[list[RepositoryRecord], add_repositories]
