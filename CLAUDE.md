@@ -77,6 +77,50 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a GitHub analysis tool built with LangGraph, configurable LLM providers (Ollama/Anthropic/HuggingFace), and the GitHub API. The system follows a modular architecture with clear separation of concerns:
 
+### Code Style and Type Safety
+
+**IMPORTANT: This project strongly emphasizes type safety and strongly-typed Python.**
+
+When working with this codebase, you MUST:
+
+- **Use type hints everywhere**: All functions, methods, and variables should have explicit type annotations
+- **Leverage Pydantic models**: Use `pydantic.BaseModel` for all data structures, especially:
+  - API inputs/outputs
+  - Configuration objects
+  - Tool parameters and results
+  - Internal data transfer objects
+- **Avoid dictionaries and untyped data**: Replace plain `dict` types with Pydantic models or `TypedDict`
+- **Enable strict type checking**: The codebase should be compatible with `mypy --strict`
+- **Validate data at boundaries**: Use Pydantic's validation at all external interfaces (API calls, user input, file I/O)
+
+Benefits of this approach:
+- Catches bugs at development time rather than runtime
+- Provides excellent IDE autocomplete and inline documentation
+- Makes refactoring safer and more confident
+- Self-documenting code through type annotations
+- Automatic data validation and serialization via Pydantic
+
+Example of preferred style:
+```python
+from pydantic import BaseModel, Field
+
+class RepositoryAnalysis(BaseModel):
+    repo_name: str = Field(..., description="Full repository name (owner/repo)")
+    stars: int = Field(ge=0, description="Number of stars")
+    topics: list[str] = Field(default_factory=list)
+
+def analyze_repository(repo: RepositoryAnalysis) -> dict[str, Any]:
+    # Type-safe, validated input
+    ...
+```
+
+Avoid untyped patterns like:
+```python
+def analyze_repository(repo):  # No type hints
+    data = {}  # Untyped dict
+    ...
+```
+
 ### Core Components
 
 1. **src/github_agent/main.py** - Entry point that orchestrates the GitHub analysis workflow

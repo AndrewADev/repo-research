@@ -6,7 +6,7 @@ from storage import ConversationStore
 
 
 def render_conversation(conversation: dict) -> str:
-    """Render conversation messages as formatted HTML.
+    """Render conversation messages as formatted HTML with markdown content.
 
     Args:
         conversation: Conversation dictionary with messages
@@ -17,12 +17,14 @@ def render_conversation(conversation: dict) -> str:
     if not conversation or "messages" not in conversation:
         return "<p>No messages found.</p>"
 
-    html_parts = []
+    import markdown
+
+    html_parts = ['<div style="font-family: sans-serif; line-height: 1.6;">']
 
     # Header with metadata
     html_parts.append(
-        "<div style='margin-bottom: 20px; padding: 10px; "
-        "background: #f5f5f5; border-radius: 5px;'>"
+        '<div style="margin-bottom: 20px; padding: 15px; background: #f5f5f5; '
+        'border-radius: 8px; color: #000;">'
     )
     html_parts.append(f"<strong>Thread ID:</strong> {conversation['thread_id']}<br>")
     html_parts.append(f"<strong>Command:</strong> {conversation['command']}<br>")
@@ -36,29 +38,41 @@ def render_conversation(conversation: dict) -> str:
     html_parts.append(f"<strong>Messages:</strong> {len(conversation['messages'])}")
     html_parts.append("</div>")
 
-    # Messages
+    # Messages - render markdown content as HTML with colored backgrounds
     for i, msg in enumerate(conversation["messages"], 1):
         role = msg["role"]
         content = msg["content"]
 
-        # Style based on role
+        # Format based on role with colored backgrounds
         if role == "user":
+            role_label = "👤 User"
             bg_color = "#e3f2fd"
-            role_label = "User"
+            border_color = "#2196F3"
         else:
+            role_label = "🤖 Assistant"
             bg_color = "#f1f8e9"
-            role_label = "Assistant"
+            border_color = "#8BC34A"
 
-        html_parts.append(
-            f"<div style='margin: 10px 0; padding: 10px; background: {bg_color}; "
-            f"border-radius: 5px;'>"
+        # Convert markdown content to HTML with table support
+        content_html = markdown.markdown(
+            content, extensions=["tables", "fenced_code", "nl2br", "codehilite"]
         )
-        html_parts.append(f"<strong>[{i}] {role_label}:</strong><br>")
-        html_parts.append(
-            f"<pre style='white-space: pre-wrap; font-family: inherit;'>{content}</pre>"
-        )
-        html_parts.append("</div>")
 
+        # Create styled div with HTML content
+        # Use explicit concatenation to avoid f-string issues with curly braces
+        # Add strong color styling to override Gradio's dark theme
+        message_html = (
+            f'<div style="margin: 10px 0; padding: 15px; background: {bg_color}; '
+            f"border-radius: 8px; border-left: 4px solid {border_color}; "
+            f'color: #000 !important;">'
+            f'<strong style="color: #000 !important;">[{i}] {role_label}</strong>'
+            "<br><br>"
+            f'<div style="color: #000 !important;">{content_html}</div>'
+            "</div>"
+        )
+        html_parts.append(message_html)
+
+    html_parts.append("</div>")  # Close wrapper div
     return "\n".join(html_parts)
 
 
