@@ -1,96 +1,19 @@
 """Gradio UI application for GitHub Agent."""
 
-import uuid
-from collections.abc import Iterator
-
 import gradio as gr
 from dotenv import load_dotenv
 
-from core.config import get_resolved_model_name
-from core.prompts import topic_prompt
-from github_agent.main import close_agent_resources, create_configured_agent
-from storage import ConversationStore
 from ui.components import get_conversation_history, load_conversation_details
+from ui.handlers import FavoritesHandler, RepositoryDisplayHandler, SearchHandler
 
 
-def stream_topic_search(topics: str, language: str | None) -> Iterator[str]:
-    """Execute topic search and stream results.
-
-    Args:
-        topics: Comma-separated topics to search
-        language: Optional programming language filter
-
-    Yields:
-        Streaming response chunks
-    """
-    if not topics.strip():
-        yield "Please enter at least one topic."
-        return
-
-    # Combine topics and language
-    search_query = topics.strip()
-    if language and language != "Any":
-        search_query = f"{search_query},{language}"
-
-    # Generate thread ID
-    thread_id = str(uuid.uuid4())
-
-    with ConversationStore() as store:
-        resolved_model = get_resolved_model_name(None)
-        store.create_conversation(
-            thread_id,
-            "topics",
-            f"UI Search: {search_query}",
-            model_name=resolved_model,
-        )
-
-    # Create agent and run search (memory is created internally)
-    agent = create_configured_agent(model_name_override=None, memory=None)
-    try:
-        # Configure thread
-        config = {"configurable": {"thread_id": thread_id}}
-
-        # Format prompt
-        call_args = {"topics": search_query}
-        if isinstance(topic_prompt.template, object) and hasattr(
-            topic_prompt.template, "format"
-        ):
-            formatted_prompt = topic_prompt.template.format(**call_args)
-        else:
-            formatted_prompt = str(topic_prompt.template)
-
-        # Stream events
-        events = agent.stream(
-            {"messages": [("user", formatted_prompt)]}, config, stream_mode="values"
-        )
-
-        full_response = []
-        for event in events:
-            if "messages" in event:
-                last_message = event["messages"][-1]
-                if hasattr(last_message, "content"):
-                    content = last_message.content
-                    full_response.append(content)
-                    yield "\n\n".join(full_response)
-
-        # Add thread ID at the end
-        final_output = "\n\n".join(full_response)
-        final_output += f"\n\n---\n💾 **Thread ID:** `{thread_id}`"
-        yield final_output
-
-    except Exception as e:
-        yield f"Error during search: {str(e)}"
-    finally:
-        close_agent_resources(agent)
-
-
-def create_topics_tab() -> gr.Blocks:
+def create_topics_tab(favorites_state):
     """Create the Topics Search tab interface.
 
-    Returns:
-        Gradio Blocks component for topics tab
+    Args:
+        favorites_state: Shared BrowserState for favorites
     """
-    with gr.Blocks() as topics_tab:
+    with gr.Tab("🔍 Topic Search"):
         gr.Markdown("## 🔍 Search GitHub Repositories by Topics")
         gr.Markdown(
             "Search for recently active GitHub repositories by topics and "
@@ -128,22 +51,126 @@ def create_topics_tab() -> gr.Blocks:
 
         output_box = gr.Markdown(label="Results")
 
-        search_button.click(
-            fn=stream_topic_search,
-            inputs=[topics_input, language_dropdown],
-            outputs=output_box,
+        # Hidden state to store extracted repositories
+        extracted_repos = gr.State([])
+
+        gr.Markdown("### Found Repositories")
+        gr.Markdown("Click 'Save' to bookmark repositories to your favorites list.")
+
+        repos_display = gr.Dataframe(
+            headers=["Repository", "Stars", "Language", "Description", "Actions"],
+            datatype=["str", "number", "str", "str", "str"],
+            label="Extracted Repositories",
+            interactive=False,
+            visible=False,
         )
 
-    return topics_tab
+        with gr.Row():
+            save_repo_input = gr.Textbox(
+                label="Save Repository by Name",
+                placeholder="owner/repo",
+                scale=3,
+            )
+            save_button = gr.Button("💾 Save", variant="primary", scale=1)
+
+        save_status = gr.Markdown(visible=False)
+
+        # Wire up event handlers
+        search_button.click(
+            fn=SearchHandler.search_with_extraction,
+            inputs=[topics_input, language_dropdown, favorites_state],
+            outputs=[output_box, extracted_repos, favorites_state],
+        )
+
+        extracted_repos.change(
+            fn=RepositoryDisplayHandler.format_repos_for_table,
+            inputs=extracted_repos,
+            outputs=repos_display,
+        )
+
+        def handle_save(repo_name, repos, favorites):
+            updated_fav, msg, show = FavoritesHandler.save_repository(
+                repo_name, repos, favorites
+            )
+            return updated_fav, gr.update(value=msg, visible=show)
+
+        save_button.click(
+            fn=handle_save,
+            inputs=[save_repo_input, extracted_repos, favorites_state],
+            outputs=[favorites_state, save_status],
+        )
 
 
-def create_history_tab() -> gr.Blocks:
-    """Create the Conversation History tab interface.
+def create_saved_repos_tab(favorites_state):
+    """Create the Saved Repositories tab interface.
 
-    Returns:
-        Gradio Blocks component for history tab
+    Args:
+        favorites_state: Shared BrowserState for favorites
     """
-    with gr.Blocks() as history_tab:
+    with gr.Tab("⭐ Saved Repositories"):
+        gr.Markdown("## ⭐ Saved Repositories")
+        gr.Markdown(
+            "Your bookmarked repositories are stored locally in your browser. "
+            "They will persist across sessions on this device "
+            "(unless you clear site data)."
+        )
+
+        with gr.Row():
+            refresh_button = gr.Button("🔄 Refresh", variant="secondary")
+            export_button = gr.Button("📥 Export CSV", variant="secondary")
+
+        repos_table = gr.Dataframe(
+            headers=[
+                "Repository",
+                "URL",
+                "Stars",
+                "Language",
+                "Topics",
+                "Description",
+                "Saved At",
+            ],
+            datatype=["str", "str", "number", "str", "str", "str", "str"],
+            label="Saved Repositories",
+            interactive=False,
+            wrap=True,
+        )
+
+        with gr.Row():
+            remove_input = gr.Textbox(
+                label="Remove Repository",
+                placeholder="Enter full name (e.g., owner/repo)",
+                scale=3,
+            )
+            remove_button = gr.Button("🗑️ Remove", variant="stop", scale=1)
+
+        export_output = gr.File(label="Downloaded CSV", visible=False)
+
+        # Wire up event handlers
+        refresh_button.click(
+            fn=FavoritesHandler.refresh_table,
+            inputs=favorites_state,
+            outputs=repos_table,
+        )
+
+        remove_button.click(
+            fn=FavoritesHandler.remove_repository,
+            inputs=[remove_input, favorites_state],
+            outputs=[favorites_state, repos_table, remove_input],
+        )
+
+        export_button.click(
+            fn=FavoritesHandler.export_to_csv,
+            inputs=favorites_state,
+            outputs=export_output,
+        )
+
+        # Initialize table on app load by setting select event on the tab itself
+        # This will be triggered when the parent Tabs component loads
+
+
+def create_history_tab():
+    """Create the Conversation History tab interface."""
+    with gr.Tab("📚 History"):
         gr.Markdown("## 📚 Conversation History")
         gr.Markdown("View and browse your conversation history.")
 
@@ -177,16 +204,11 @@ def create_history_tab() -> gr.Blocks:
 
         conversation_viewer = gr.HTML(label="Conversation")
 
-        # State to track selected thread
-        selected_thread = gr.State(None)
-
-        # Load initial data
-        conversations_table.value = get_conversation_history(20)
-
         # Refresh handler
         def refresh_conversations(limit: int):
             return get_conversation_history(limit)
 
+        # Load initial data using refresh handler
         refresh_button.click(
             fn=refresh_conversations, inputs=limit_slider, outputs=conversations_table
         )
@@ -195,14 +217,14 @@ def create_history_tab() -> gr.Blocks:
             fn=refresh_conversations, inputs=limit_slider, outputs=conversations_table
         )
 
-        # Selection handler
+        # Selection handler - load_conversation_details expects SelectData event
+        def handle_row_select(evt: gr.SelectData):
+            return load_conversation_details(None, evt)
+
         conversations_table.select(
-            fn=load_conversation_details,
-            inputs=selected_thread,
+            fn=handle_row_select,
             outputs=conversation_viewer,
         )
-
-    return history_tab
 
 
 def launch_ui(
@@ -224,8 +246,17 @@ def launch_ui(
             "Powered by LangGraph and configurable LLM providers."
         )
 
+        # Shared browser state for favorites across tabs
+        # BrowserState persists in browser localStorage with explicit storage_key
+        # This ensures data persists across both page refreshes AND server restarts
+        # Note: If you see localStorage errors, clear your browser's site data
+        favorites_state = gr.BrowserState(
+            default_value={"saved_repos": []}, storage_key="github_agent_favorites_v1"
+        )
+
         with gr.Tabs():
-            create_topics_tab()
+            create_topics_tab(favorites_state)
+            create_saved_repos_tab(favorites_state)
             create_history_tab()
 
     app.launch(share=share, server_name=server_name, server_port=server_port)
