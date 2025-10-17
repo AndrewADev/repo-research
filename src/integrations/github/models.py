@@ -5,6 +5,63 @@ from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
 
 
+class CommitChangeRecord(BaseModel):
+    """Record of a single commit's changes to a file."""
+
+    commit_sha: str = Field(..., description="Git commit SHA")
+    commit_date: datetime = Field(..., description="When the commit was made")
+    author_login: str | None = Field(None, description="GitHub login of the author")
+    additions: int = Field(..., description="Lines added in this commit")
+    deletions: int = Field(..., description="Lines deleted in this commit")
+    total_lines_changed: int = Field(
+        ..., description="Total lines affected (additions + deletions)"
+    )
+
+
+class CodeLineage(BaseModel):
+    """Tracks when code lines were first introduced to detect rework."""
+
+    file_path: str = Field(..., description="Path to the file")
+    introduced_at: datetime = Field(
+        ..., description="When these lines were first added"
+    )
+    introduced_by: str | None = Field(
+        None, description="Author who introduced these lines"
+    )
+    commit_sha: str = Field(..., description="Commit that introduced these lines")
+    line_count: int = Field(..., description="Number of lines in this lineage block")
+
+
+class ReworkCategoryBreakdown(BaseModel):
+    """Breakdown of code changes by category for rework rate analysis."""
+
+    new_work_lines: int = Field(0, description="Lines of new work added")
+    rework_lines: int = Field(
+        0, description="Lines rewritten within 21 days of original commit"
+    )
+    refactor_lines: int = Field(0, description="Lines modified after 21 days")
+    helping_others_lines: int = Field(
+        0, description="Lines changed in someone else's recent code (within 21 days)"
+    )
+
+    @property
+    def total_lines(self) -> int:
+        """Total lines across all categories."""
+        return (
+            self.new_work_lines
+            + self.rework_lines
+            + self.refactor_lines
+            + self.helping_others_lines
+        )
+
+    @property
+    def rework_percentage(self) -> float:
+        """Calculate rework percentage."""
+        if self.total_lines == 0:
+            return 0.0
+        return (self.rework_lines / self.total_lines) * 100
+
+
 class RepositoryRecord(BaseModel):
     """Internal model for tracking repositories in state."""
 
@@ -169,6 +226,103 @@ class QueryIssuesInput(BaseModel):
     since: datetime | None = Field(
         None, description="Only show issues updated after this date (ISO 8601 format)"
     )
+
+
+class CommitHotspotInput(BaseModel):
+    """Input schema for commit hotspot analysis."""
+
+    repo_full_name: str = Field(
+        ..., description="Full repository name (e.g., 'username/repo')"
+    )
+    days: int = Field(
+        180, description="Number of days of history to analyze", ge=1, le=365
+    )
+    max_commits: int = Field(
+        500, description="Maximum commits to analyze", ge=1, le=1000
+    )
+    path: str | None = Field(
+        None,
+        description=(
+            "Optional path to focus analysis (e.g., 'src/integrations' for drill-down)"
+        ),
+    )
+    min_changes: int = Field(
+        3,
+        description=("Minimum changes required for a file to be considered a hotspot"),
+        ge=1,
+    )
+    strategy: Literal["activity", "rework"] = Field(
+        "activity",
+        description=(
+            "Churn calculation strategy: "
+            "'activity' = total activity churn percentage "
+            "(default, requires baseline LOC), "
+            "'rework' = rework rate within 21 days"
+        ),
+    )
+
+
+class FileHotspot(BaseModel):
+    """Statistics for a single file hotspot."""
+
+    file_path: str = Field(..., description="Path to the file in the repository")
+    change_count: int = Field(..., description="Number of times file was changed")
+    total_additions: int = Field(
+        ..., description="Total lines added across all commits"
+    )
+    total_deletions: int = Field(
+        ..., description="Total lines deleted across all commits"
+    )
+    churn_score: int | float = Field(
+        ...,
+        description=(
+            "Churn score (metric varies by strategy): "
+            "Simple: (additions + deletions) * change_count, "
+            "Activity: percentage-based, "
+            "Rework: rework percentage"
+        ),
+    )
+    unique_authors: int = Field(
+        ..., description="Number of unique authors who modified this file"
+    )
+    first_changed: datetime | None = Field(
+        None, description="First commit date in analysis period"
+    )
+    last_changed: datetime | None = Field(
+        None, description="Most recent commit date in analysis period"
+    )
+    baseline_loc: int | None = Field(
+        None,
+        description="Lines of code at start of analysis period (for activity churn)",
+    )
+    activity_churn_percentage: float | None = Field(
+        None,
+        description=(
+            "Total activity churn: (additions + deletions) / baseline_loc × 100"
+        ),
+    )
+    category_breakdown: ReworkCategoryBreakdown | None = Field(
+        None, description="Breakdown by churn category (for rework rate strategy)"
+    )
+    rework_percentage: float | None = Field(
+        None, description="Percentage of code that is rework (rewritten within 21 days)"
+    )
+
+
+class HotspotAnalysisResult(BaseModel):
+    """Complete hotspot analysis result."""
+
+    hotspots: list[FileHotspot] = Field(
+        ..., description="List of file hotspots ranked by churn score"
+    )
+    analysis_period_days: int = Field(..., description="Number of days analyzed")
+    total_commits_analyzed: int = Field(
+        ..., description="Total number of commits processed"
+    )
+    total_files_changed: int = Field(..., description="Total unique files that changed")
+    date_range_start: datetime = Field(..., description="Start of analysis period")
+    date_range_end: datetime = Field(..., description="End of analysis period")
+    path_filter: str | None = Field(None, description="Path filter applied, if any")
 
 
 def add_repositories(

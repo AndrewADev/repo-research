@@ -12,7 +12,7 @@ Requirements:
 
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 from dotenv import load_dotenv
@@ -21,7 +21,11 @@ from github import Auth, Github, GithubException
 from github.GithubObject import NotSet
 
 if TYPE_CHECKING:
-    from .models import QueryIssuesInput, RepositorySearchByTopicInput
+    from .models import (
+        CommitHotspotInput,
+        QueryIssuesInput,
+        RepositorySearchByTopicInput,
+    )
 
 
 def build_repository_search_query(search_params: "RepositorySearchByTopicInput") -> str:
@@ -609,6 +613,153 @@ class GitHubTools:
                     break
 
             return results
+
+        except GithubException as e:
+            raise Exception(f"GitHub API error: {str(e)}") from e
+
+    def analyze_commit_hotspots(self, hotspot_params: "CommitHotspotInput") -> dict:
+        """
+        Analyze maintenance hotspots by examining commit history.
+
+        Identifies files that change frequently, which may indicate architectural
+        issues, complexity, or areas needing refactoring.
+
+        Args:
+            hotspot_params: CommitHotspotInput with analysis parameters
+
+        Returns:
+            Dictionary containing hotspot analysis results
+        """
+        from .churn_strategies import (
+            ReworkRateStrategy,
+            TotalActivityChurnStrategy,
+        )
+        from .hotspot_tracker import FileChangeTracker
+
+        try:
+            self._handle_rate_limit()
+
+            repo = self.github.get_repo(hotspot_params.repo_full_name)
+
+            # Calculate time window
+            date_range_end = datetime.now()
+            date_range_start = date_range_end - timedelta(days=hotspot_params.days)
+
+            # Select churn calculation strategy
+            strategy_map = {
+                "activity": TotalActivityChurnStrategy(),
+                "rework": ReworkRateStrategy(),
+            }
+            # Default to activity strategy for backward compatibility with
+            # 'simple' and 'author' which were removed
+            strategy = strategy_map.get(
+                hotspot_params.strategy, TotalActivityChurnStrategy()
+            )
+
+            # Initialize file change tracker with selected strategy
+            tracker = FileChangeTracker(strategy=strategy)
+
+            # Get baseline LOC if using activity churn strategy
+            baseline_loc_map: dict[str, int] = {}
+            if isinstance(strategy, TotalActivityChurnStrategy):
+                try:
+                    # Get repository tree at the start of analysis period
+                    # Find the commit closest to date_range_start
+                    commits_at_start = repo.get_commits(until=date_range_start)
+                    try:
+                        baseline_commit = commits_at_start[0]
+                        tree = repo.get_git_tree(baseline_commit.sha, recursive=True)
+
+                        # Count LOC for each file
+                        for item in tree.tree:
+                            if item.type == "blob":  # It's a file, not a directory
+                                try:
+                                    # Fetch file contents
+                                    blob = repo.get_git_blob(item.sha)
+                                    if blob.encoding == "base64":
+                                        # Decode and count lines
+                                        import base64
+
+                                        content = base64.b64decode(blob.content).decode(
+                                            "utf-8", errors="ignore"
+                                        )
+                                        loc = len(content.splitlines())
+                                        baseline_loc_map[item.path] = loc
+                                except Exception:
+                                    # Skip files we can't read
+                                    continue
+
+                    except IndexError:
+                        # No commits at baseline, use empty baseline
+                        pass
+
+                except Exception as baseline_error:
+                    print(f"Warning: Could not fetch baseline LOC: {baseline_error}")
+
+            # Get commits with optional path filter
+            if hotspot_params.path:
+                commits = repo.get_commits(
+                    since=date_range_start, path=hotspot_params.path
+                )
+            else:
+                commits = repo.get_commits(since=date_range_start)
+
+            commits_analyzed = 0
+
+            # Process commits up to max_commits limit
+            for commit in commits:
+                if commits_analyzed >= hotspot_params.max_commits:
+                    break
+
+                self._handle_rate_limit()
+
+                # Access commit files
+                try:
+                    for file in commit.files:
+                        # Record the file change with commit SHA
+                        tracker.record_file_change(
+                            file_path=file.filename,
+                            additions=file.additions,
+                            deletions=file.deletions,
+                            author_login=commit.author.login if commit.author else None,
+                            commit_date=commit.commit.author.date,
+                            commit_sha=commit.sha,
+                        )
+
+                        # Set baseline LOC if available
+                        if file.filename in baseline_loc_map:
+                            tracker.set_baseline_loc(
+                                file.filename, baseline_loc_map[file.filename]
+                            )
+
+                except Exception as file_error:
+                    # Log but continue if we can't access files for a commit
+                    error_msg = (
+                        f"Warning: Could not access files for "
+                        f"commit {commit.sha}: {file_error}"
+                    )
+                    print(error_msg)
+                    continue
+
+                commits_analyzed += 1
+                time.sleep(0.1)  # Small delay to be nice to API
+
+            # Get hotspots from tracker
+            hotspots = tracker.get_hotspots(hotspot_params.min_changes)
+
+            # Build result
+            result = {
+                "hotspots": [h.model_dump() for h in hotspots],
+                "analysis_period_days": hotspot_params.days,
+                "total_commits_analyzed": commits_analyzed,
+                "total_files_changed": tracker.total_files_changed,
+                "date_range_start": date_range_start,
+                "date_range_end": date_range_end,
+                "path_filter": hotspot_params.path,
+                "strategy": hotspot_params.strategy,
+            }
+
+            return result
 
         except GithubException as e:
             raise Exception(f"GitHub API error: {str(e)}") from e

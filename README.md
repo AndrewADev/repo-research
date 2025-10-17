@@ -13,10 +13,23 @@ uv sync
 uv run github-agent analyze
 ```
 
+### Commands
+
 Available commands:
 ```shell
 uv run github-agent --help
 ```
+
+#### Hotspot analysis
+
+Specifying the `hotspots` command will kick off a workflow that looks at things such as:
+* Number and type of changes over a period
+* Number of authors of changes
+* Concentration of these per file
+
+Additionally, it will calculate some simplistic "churn" metrics, before performing an analysis, which most models return in markdown format you can copy over to a markdown viewer.
+
+Note that it is possible to limit analysis to a particular path. See the `hotspots --help` command for these and other details.
 
 
 ## Development
