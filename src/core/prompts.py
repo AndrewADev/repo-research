@@ -36,3 +36,21 @@ topic_prompt = TemplatedPrompt(
     ),
     keys=["topics"],
 )
+
+
+hotspot_analysis = TemplatedPrompt(
+    template=PromptTemplate.from_template(
+        "I need to identify maintenance hotspots in the repository: {repo_name}\n"
+        "Please analyze the commit history with these parameters:\n"
+        "- Analyze the last {days} days of commit history\n"
+        "- Process up to {max_commits} commits\n"
+        "- Only report files with at least {min_changes} changes\n"
+        "{path_instruction}\n"
+        "\n"
+        "Focus on files with high churn (frequent changes with large diffs) as these "
+        "are the most likely candidates for refactoring.\n"
+        "Provide insights on the top hotspots and what they might indicate about "
+        "the codebase structure."
+    ),
+    keys=["repo_name", "days", "max_commits", "min_changes", "path_instruction"],
+)

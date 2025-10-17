@@ -141,6 +141,8 @@ def analyze_repository(repo):  # No type hints
    - `adapter.py` - LangGraph integration layer with Pydantic schemas
    - `agent.py` - LangGraph state machine configuration
    - `models.py` - Pydantic models for tool input validation
+   - `churn_strategies.py` - Pluggable strategies for calculating code churn
+   - `hotspot_tracker.py` - Tracks file changes for hotspot analysis
    - Supports multiple LLM providers (Ollama, Anthropic, HuggingFace)
 
 4. **src/core/** - Core application models and prompts
@@ -157,6 +159,36 @@ def analyze_repository(repo):  # No type hints
 - **Thread Management**: Unique thread IDs for each conversation with resume capability
 - **Error Handling**: Comprehensive error handling with JSON responses for tool failures
 - **Rate Limiting**: Built-in GitHub API rate limit handling with automatic backoff
+- **Strategy Pattern**: Pluggable churn calculation strategies for flexible code analysis
+
+### Hotspot Analysis Feature
+
+The tool includes commit hotspot analysis to identify files with high maintenance burden:
+
+**Churn Calculation Strategies:**
+
+1. **Total Activity Churn** (default: `strategy="activity"`)
+   - Formula: `(additions + deletions) / baseline_loc × 100`
+   - Measures total code volatility as percentage of initial codebase
+   - Requires baseline LOC at start of analysis period
+   - Example: 4,000 added + 1,600 deleted / 20,000 baseline = 28% churn
+
+2. **Rework Rate** (`strategy="rework"`)
+   - Measures code rewritten within 21-day window
+   - Categorizes changes as:
+     - **New Work**: Newly added code
+     - **Rework**: Code deleted/rewritten within 21 days by same author
+     - **Refactor**: Code modified after 21 days
+     - **Helping Others**: Changes to someone else's recent code within 21 days
+   - Formula: `(rework_lines) / (total_lines) × 100`
+   - Returns detailed category breakdown
+
+**Key Implementation Details:**
+- Chronological commit processing for temporal analysis
+- Baseline LOC fetched from Git tree at analysis period start
+- Same-commit additions and deletions are NOT considered rework
+- Only changes in subsequent commits (days_diff > 0) count as rework
+- Fixed 21-day window for rework detection (industry standard)
 
 ### Dependencies
 
@@ -196,3 +228,28 @@ Available development commands:
 - `uv run ruff check --fix` - Auto-fix linting issues
 - `prek install` - Install pre-commit hooks
 - `prek run --all-files` - Run all pre-commit hooks manually
+
+### Testing
+
+The project uses pytest for comprehensive test coverage:
+
+**Running Tests:**
+- `uv run pytest` - Run all tests
+- `uv run pytest tests/integrations/` - Run integration tests only
+- `uv run pytest tests/integrations/test_hotspot_analysis.py -v` - Run specific test file with verbose output
+- `uv run pytest -k "rework"` - Run tests matching keyword
+- `uv run pytest --tb=short` - Run with shorter traceback format
+
+**Test Organization:**
+- `tests/core/` - Core functionality tests
+- `tests/integrations/` - GitHub API and tool integration tests
+- `tests/storage/` - Conversation persistence tests
+- `tests/tools/` - Utility tool tests
+- `tests/ui/` - User interface tests
+- `tests/main/` - CLI and main entry point tests
+
+**Key Test Files:**
+- `test_hotspot_analysis.py` - Commit hotspot analysis integration tests
+- `test_rework_rate_strategy.py` - Rework rate calculation tests
+- `test_total_activity_churn.py` - Activity churn calculation tests
+- `test_file_change_tracker.py` - File change tracking tests

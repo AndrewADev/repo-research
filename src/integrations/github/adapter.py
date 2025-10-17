@@ -20,6 +20,7 @@ from tools.utils import generate_tool_call_id
 
 from .models import (
     ActivityAnalysisInput,
+    CommitHotspotInput,
     GitHubToolState,
     QueryIssuesInput,
     RateLimitInput,
@@ -427,6 +428,60 @@ class QueryIssuesTool(StructuredTool):
                     "2) Trying different state ('all' instead of 'open'), "
                     "3) Removing or changing label filters, or "
                     "4) Adjusting the date range."
+                )
+
+            return json.dumps(response, default=str, indent=2)
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+
+class CommitHotspotAnalysisTool(StructuredTool):
+    name: str = "analyze_commit_hotspots"
+    description: str = """
+    Analyze repository maintenance hotspots by examining commit history.
+    Identifies files that change frequently, which may indicate architectural
+    issues, complexity, or areas needing refactoring. Returns files ranked
+    by churn score (a combination of change frequency and size of changes).
+    Useful for identifying technical debt and planning refactoring efforts.
+    Supports optional path filtering for drill-down analysis.
+    """
+    args_schema: type[BaseModel] = CommitHotspotInput
+
+    @with_github_tools
+    def _run(self, github_tools: GitHubTools | None = None, **kwargs) -> str:
+        """Execute the commit hotspot analysis tool."""
+        try:
+            # Create the analysis parameters model from the kwargs
+            hotspot_params = CommitHotspotInput(**kwargs)
+
+            results = github_tools.analyze_commit_hotspots(hotspot_params)
+
+            # Enhanced response with analysis metadata
+            response = {
+                "results": results,
+                "analysis_metadata": {
+                    "repository": hotspot_params.repo_full_name,
+                    "period_analyzed": f"{results['analysis_period_days']} days",
+                    "commits_processed": results["total_commits_analyzed"],
+                    "files_analyzed": results["total_files_changed"],
+                    "hotspots_found": len(results["hotspots"]),
+                    "path_filter": results["path_filter"],
+                    "min_changes_threshold": hotspot_params.min_changes,
+                },
+            }
+
+            # Add specific messaging for no hotspots found
+            if len(results["hotspots"]) == 0:
+                min_changes = hotspot_params.min_changes
+                repo_name = hotspot_params.repo_full_name
+                response["analysis_metadata"]["suggestion"] = (
+                    f"No hotspots found in {repo_name} "
+                    f"matching the criteria (min {min_changes} changes). "
+                    "Consider: "
+                    "1) Lowering min_changes threshold, "
+                    "2) Increasing the analysis period (days parameter), "
+                    "3) Checking if the repository has recent commits, or "
+                    "4) Removing path filter if applied."
                 )
 
             return json.dumps(response, default=str, indent=2)

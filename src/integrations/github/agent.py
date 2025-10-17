@@ -20,6 +20,7 @@ from tools.date_tools import CurrentDateTool, DateOffsetTool
 from tools.utils import generate_tool_call_id
 
 from .adapter import (
+    CommitHotspotAnalysisTool,
     QueryIssuesTool,
     RateLimitCheckTool,
     RepositoryActivityTool,
@@ -74,6 +75,7 @@ def create_graph(
         RepositoryLabelsTool(),
         RepositorySearchByTopicTool(),
         QueryIssuesTool(),
+        CommitHotspotAnalysisTool(),
         CurrentDateTool(),
         DateOffsetTool(),
     ]
