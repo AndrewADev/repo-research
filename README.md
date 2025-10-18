@@ -27,7 +27,7 @@ Specifying the `hotspots` command will kick off a workflow that looks at things 
 * Number of authors of changes
 * Concentration of these per file
 
-Additionally, it will calculate some simplistic "churn" metrics, before performing an analysis, which most models return in markdown format you can copy over to a markdown viewer.
+Additionally, it will calculate some simplistic "churn" metrics, before performing an analysis, which can be exported to a markdown format by providing the `--export-md` flag.
 
 Note that it is possible to limit analysis to a particular path. See the `hotspots --help` command for these and other details.
 
