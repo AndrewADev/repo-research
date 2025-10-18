@@ -313,6 +313,11 @@ def hotspots(
     thread_id: str = typer.Option(
         None, "--thread-id", help="Resume conversation with this thread ID"
     ),
+    export_md: bool = typer.Option(
+        False,
+        "--export-md",
+        help="Export analysis to markdown file in ./outputs/ directory",
+    ),
 ):
     """Analyze maintenance hotspots in a repository"""
     # Initialize storage
@@ -363,6 +368,27 @@ def hotspots(
             )
         finally:
             close_agent_resources(agent)
+
+        # Export to markdown if requested
+        if export_md:
+            try:
+                from export.writer import (
+                    export_hotspot_analysis,
+                )
+
+                filepath = export_hotspot_analysis(
+                    store=store,
+                    thread_id=thread_id,
+                    repo=repo,
+                    days=days,
+                    max_commits=max_commits,
+                    min_changes=min_changes,
+                    path_filter=path,
+                    strategy="activity",  # TODO: extract from params if configurable
+                )
+                print(f"\n📄 Analysis exported to: {filepath}")
+            except Exception as e:
+                print(f"\n⚠️  Export failed: {str(e)}")
 
         print(f"\n💾 Conversation saved with thread ID: {thread_id}")
 

@@ -87,6 +87,7 @@ data/
 raw_data/
 processed_data/
 output/
+outputs/
 results/
 temp/
 .DS_Store
