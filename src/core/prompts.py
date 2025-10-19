@@ -26,15 +26,42 @@ I want to run diagnostics on various settings.
 
 topic_prompt = TemplatedPrompt(
     template=PromptTemplate.from_template(
-        "I'm interested in learning about GitHub repositories. "
-        "I was wondering if you could help find recently active repositories "
-        "related to: {topics} \n"
-        "If any of the topics are programming languages, then please filter to only "
-        "repositories using that language. \n"
-        "Please filter to only repositories that were pushed to within the last "
-        "30 days. \n"
+        "I'm interested in learning about GitHub repositories "
+        "related to: {topics}\n"
+        "\n"
+        "Please search for repositories using the "
+        "search_repositories_by_topic tool with these parameters:\n"
+        "- Topics: {topics}\n"
+        "- Sort by: {sort}\n"
+        "- Limit: {limit} results\n"
+        "- Language: {language}\n"
+        "- License: {license}\n"
+        "- Minimum stars: {min_stars}\n"
+        "- Maximum stars: {max_stars}\n"
+        "- Pushed after: {pushed_after}\n"
+        "- Archived filter: {archived}\n"
+        "- Fork filter: {fork}\n"
+        "\n"
+        "Active filters:\n"
+        "{filters_text}\n"
+        "\n"
+        "Please provide insights about the repositories you find, "
+        "including their purpose, activity level, and why they might "
+        "be interesting.\n"
     ),
-    keys=["topics"],
+    keys=[
+        "topics",
+        "sort",
+        "limit",
+        "language",
+        "license",
+        "min_stars",
+        "max_stars",
+        "pushed_after",
+        "archived",
+        "fork",
+        "filters_text",
+    ],
 )
 
 

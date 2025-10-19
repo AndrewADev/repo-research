@@ -20,6 +20,22 @@ Available commands:
 uv run github-agent --help
 ```
 
+#### Topic-based search
+
+Search for projects/repositories based on "topics", with the ability to specify various filter criteria (such as recency, license, language, etc.)
+
+Examples:
+```shell
+uv run github-agent topics "ai,machine-learning"
+
+# With language and recency filter
+uv run github-agent topics "llm" --language python --pushed-within-days 30
+
+# Comprehensive filtering
+uv run github-agent topics "web-framework" --language rust --license mit --min-stars 1000 --fork false
+--archived false
+```
+
 #### Hotspot analysis
 
 Specifying the `hotspots` command will kick off a workflow that looks at things such as:
