@@ -55,7 +55,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 #### Analysis Commands
 - `uv run github-agent diagnostics` - Diagnose setup issues
-- `uv run github-agent analyze` - Run comprehensive starred repository analysis
+- `uv run github-agent pulse` - Analyze activity of starred repositories (supports `--sort`, `--direction`, `--limit`)
 - `uv run github-agent topics "ai,machine-learning"` - Search repositories by topics
 - All analysis commands support `--thread-id` flag to resume existing conversations
 

@@ -2,14 +2,24 @@ from langchain_core.prompts import PromptTemplate
 
 from core.models import TemplatedPrompt, ThreadedPrompt
 
-comprehensive_analysis = ThreadedPrompt(
-    prompt="""
-I need a comprehensive analysis of my currently starred repositories.
-1. First, find the top 20 repositories I have starred with more than 5000 stars in total
-2. For each of these repositories, analyze their recent activity
-3. Provide a summary of which project seems to be most actively maintained
-""",
-    follow_ups=["Which of these project has the most active community?"],
+starred_pulse = TemplatedPrompt(
+    template=PromptTemplate.from_template(
+        "I need a comprehensive analysis of my currently starred repositories.\n"
+        "\n"
+        "Please fetch my starred repositories using the get_starred_repositories "
+        "tool with these parameters:\n"
+        "- Sort by: {sort}\n"
+        "- Direction: {direction}\n"
+        "- Limit: {limit} results\n"
+        "\n"
+        "Active filters:\n"
+        "{filters_text}\n"
+        "\n"
+        "Then analyze the recent activity of these repositories and provide insights "
+        "about which projects seem to be most actively maintained and have the most "
+        "active communities.\n"
+    ),
+    keys=["sort", "direction", "limit", "filters_text"],
 )
 
 run_diagnostic = ThreadedPrompt(

@@ -81,8 +81,9 @@ def with_github_tools(func):
 class StarredRepositoriesTool(BaseTool):
     name: str = "get_starred_repositories"
     description: str = """
-    Retrieve and analyze repositories starred by a GitHub user.
-    Useful for discovering popular repositories and understanding a user's interests.
+    Retrieve repositories starred by a GitHub user with native GitHub API sorting.
+    Supports sorting by repository creation date or last update date.
+    Useful for understanding user interests and finding recently active projects.
     """
     args_schema: type[BaseModel] = StarredRepoInput
 
@@ -90,20 +91,38 @@ class StarredRepositoriesTool(BaseTool):
     def _run(
         self,
         username: str | None = None,
-        sort_by: str = "stars",
+        sort: str | None = None,
+        direction: str = "desc",
+        per_page: int = 30,
+        limit: int | None = None,
         tool_call_id: Annotated[str, InjectedToolCallId] = None,
         github_tools: GitHubTools | None = None,
     ) -> Command:
         """Execute the starred repositories tool."""
         try:
-            repos = github_tools.get_starred_repositories(username, sort_by)
+            tool_call_id = (
+                generate_tool_call_id("get_starred_repositories")
+                if tool_call_id is None
+                else tool_call_id
+            )
+
+            repos = github_tools.get_starred_repositories(
+                username=username,
+                sort=sort,
+                direction=direction,
+                per_page=per_page,
+                limit=limit,
+            )
 
             # Enhanced response with metadata
             response = {
                 "results": repos,
                 "search_metadata": {
                     "username": username or "authenticated_user",
-                    "sort_by": sort_by,
+                    "sort": sort,
+                    "direction": direction,
+                    "per_page": per_page,
+                    "limit": limit,
                     "total_found": len(repos),
                     "has_results": len(repos) > 0,
                 },
