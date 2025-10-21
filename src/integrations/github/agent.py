@@ -11,10 +11,11 @@ from pathlib import Path
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import tools_condition
 from langgraph.types import Command
 
-from core.config import LLMProviderConfig
+from core.config import LLMProviderConfig, get_config
 from core.llm import create_llm
 from tools.date_tools import CurrentDateTool, DateOffsetTool
 from tools.utils import generate_tool_call_id
@@ -245,3 +246,34 @@ def create_graph(
 
     # Compile and return the graph
     return graph.compile(checkpointer=memory, name="GitHubAgent")
+
+
+def create_configured_agent(
+    model_name_override: str | None = None, memory: BaseCheckpointSaver | None = None
+):
+    """Create a graph with the specified model configuration.
+
+    Args:
+        model_name_override: CLI-provided model name that overrides settings.
+
+    Returns:
+        Tuple of graph - caller must close connection
+    """
+    if model_name_override is not None:
+        provider_config = get_config(model_name=model_name_override)
+    else:
+        provider_config = get_config()
+
+    return create_graph(
+        provider_config,
+        memory,
+    )
+
+
+def close_agent_resources(graph: CompiledStateGraph):
+    """Close checkpointer database connection if present."""
+    if isinstance(graph.checkpointer, SqliteSaver):
+        if hasattr(graph.checkpointer.conn, "close") and callable(
+            graph.checkpointer.conn.close
+        ):
+            graph.checkpointer.conn.close()

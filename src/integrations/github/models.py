@@ -85,13 +85,28 @@ class RepositoryRecord(BaseModel):
 
 # Define input schemas for our tools
 class StarredRepoInput(BaseModel):
-    """Input schema for starred repositories tool."""
+    """Input schema for starred repositories tool using GitHub API native sorting."""
 
     username: str | None = Field(
         None, description="GitHub username. If not provided, uses authenticated user"
     )
-    sort_by: Literal["stars", "recent", "issues"] = Field(
-        "stars", description="How to sort the results"
+    sort: Literal["created", "updated"] | None = Field(
+        "updated",
+        description=(
+            "Sort by repository creation date or last update date. "
+            "GitHub API native sort parameter."
+        ),
+    )
+    direction: Literal["asc", "desc"] = Field(
+        "desc", description="Sort direction (desc shows most recent first)"
+    )
+    per_page: int = Field(30, description="Number of results per page", ge=1, le=100)
+    limit: int | None = Field(
+        50,
+        description=(
+            "Maximum total results to return across all pages. If None, returns all."
+        ),
+        ge=1,
     )
 
 

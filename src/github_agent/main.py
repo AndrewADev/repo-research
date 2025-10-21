@@ -1,57 +1,24 @@
 import uuid
+from typing import Literal
 
 import typer
 from dotenv import load_dotenv
-from langgraph.checkpoint.base import BaseCheckpointSaver
-from langgraph.checkpoint.sqlite import SqliteSaver
-from langgraph.graph.state import CompiledStateGraph
 
-from core.config import get_config, get_resolved_model_name
+from core.config import get_resolved_model_name
 from core.models import TemplatedPrompt, ThreadedPrompt
 from core.prompts import (
-    comprehensive_analysis,
     hotspot_analysis,
     run_diagnostic,
+    starred_pulse,
     topic_prompt,
 )
-from integrations.github.agent import create_graph
+from integrations.github.agent import close_agent_resources, create_configured_agent
 from storage import ConversationStore
 
 # Load environment variables
 load_dotenv()
 
 app = typer.Typer(rich_markup_mode="rich")
-
-
-def create_configured_agent(
-    model_name_override: str | None = None, memory: BaseCheckpointSaver | None = None
-):
-    """Create a graph with the specified model configuration.
-
-    Args:
-        model_name_override: CLI-provided model name that overrides settings.
-
-    Returns:
-        Tuple of graph - caller must close connection
-    """
-    if model_name_override is not None:
-        provider_config = get_config(model_name=model_name_override)
-    else:
-        provider_config = get_config()
-
-    return create_graph(
-        provider_config,
-        memory,
-    )
-
-
-def close_agent_resources(graph: CompiledStateGraph):
-    """Close checkpointer database connection if present."""
-    if isinstance(graph.checkpointer, SqliteSaver):
-        if hasattr(graph.checkpointer.conn, "close") and callable(
-            graph.checkpointer.conn.close
-        ):
-            graph.checkpointer.conn.close()
 
 
 def run_prompt(prompt: ThreadedPrompt, graph, thread_id: str):
@@ -187,6 +154,8 @@ def diagnostics(
 
         agent = create_configured_agent(model_name)
         try:
+            # TODO: migrate away from legacy method run_prompt so
+            #   we can remove it
             run_prompt(run_diagnostic, agent, thread_id)
         finally:
             close_agent_resources(agent)
@@ -194,8 +163,31 @@ def diagnostics(
         print(f"\n💾 Conversation saved with thread ID: {thread_id}")
 
 
+DEFAULT_PULSE_LIMIT = 50
+
+
 @app.command()
-def analyze(
+def pulse(
+    sort: Literal["created", "updated"] = typer.Option(
+        "updated",
+        "--sort",
+        "-s",
+        help="Sort starred repositories by: created or updated",
+    ),
+    direction: Literal["asc", "desc"] = typer.Option(
+        "desc",
+        "--direction",
+        "-d",
+        help="Sort direction: asc or desc",
+    ),
+    limit: int = typer.Option(
+        DEFAULT_PULSE_LIMIT,
+        "--limit",
+        "-l",
+        help="Maximum number of starred repositories to analyze (1-100)",
+        min=1,
+        max=100,
+    ),
     model_name: str = typer.Option(
         None, "--model-name", help="Override the model name for this command"
     ),
@@ -203,19 +195,29 @@ def analyze(
         None, "--thread-id", help="Resume conversation with this thread ID"
     ),
 ):
-    """Run comprehensive analysis of starred repositories"""
+    """Analyze activity of user's starred repositories"""
     # Initialize storage
     with ConversationStore() as store:
         # Get the resolved model name
         resolved_model = get_resolved_model_name(model_name)
+
+        # Build summary string with non-default parameters
+        summary_parts = ["Analyzing starred repositories"]
+        if sort != "updated":
+            summary_parts.append(f"sort={sort}")
+        if direction != "desc":
+            summary_parts.append(f"direction={direction}")
+        if limit != DEFAULT_PULSE_LIMIT:
+            summary_parts.append(f"limit={limit}")
+        summary = ", ".join(summary_parts)
 
         # Generate or use provided thread ID
         if thread_id is None:
             thread_id = str(uuid.uuid4())
             store.create_conversation(
                 thread_id,
-                "analyze",
-                "Analyzing starred repositories",
+                "pulse",
+                summary,
                 model_name=resolved_model,
             )
         elif not store.conversation_exists(thread_id):
@@ -224,7 +226,27 @@ def analyze(
 
         agent = create_configured_agent(model_name)
         try:
-            run_prompt(comprehensive_analysis, agent, thread_id)
+            # Build filter descriptions for the prompt
+            filter_descriptions = []
+            if sort != "updated":
+                filter_descriptions.append(f"- Sort by: {sort}")
+            if direction != "desc":
+                filter_descriptions.append(f"- Direction: {direction}")
+            if limit != DEFAULT_PULSE_LIMIT:
+                filter_descriptions.append(f"- Limit: {limit}")
+
+            if filter_descriptions:
+                filters_text = "\n".join(filter_descriptions)
+            else:
+                filters_text = "Using defaults (sort by recently updated, limit 50)"
+
+            # Pass all parameters to template
+            run_templated_prompt(
+                starred_pulse,
+                [sort, direction, str(limit), filters_text],
+                agent,
+                thread_id,
+            )
         finally:
             close_agent_resources(agent)
 
@@ -238,7 +260,7 @@ DEFAULT_TOPIC_MIN_STARS = 25
 @app.command()
 def topics(
     topics_raw: str,
-    sort: str = typer.Option(
+    sort: Literal["created", "updated"] = typer.Option(
         "updated",
         "--sort",
         "-s",

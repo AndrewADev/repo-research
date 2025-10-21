@@ -20,6 +20,13 @@ Available commands:
 uv run github-agent --help
 ```
 
+#### Activity analysis (starred repo pulse)
+
+The `pulse` command will run some basic analysis on how active repos are, such as the number of open issues, recent commit count etc. For now, it runs against the users starred repositories (by default looking at the most recenly updated ones).
+
+See `pulse --help` for more details.
+
+
 #### Topic-based search
 
 Search for projects/repositories based on "topics", with the ability to specify various filter criteria (such as recency, license, language, etc.)

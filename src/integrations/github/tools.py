@@ -154,14 +154,22 @@ class GitHubTools:
                 time.sleep(reset_time)
 
     def get_starred_repositories(
-        self, username: str | None = None, sort_by: str = "stars"
+        self,
+        username: str | None = None,
+        sort: str | None = "updated",
+        direction: str = "desc",
+        per_page: int = 30,
+        limit: int | None = 50,
     ) -> list[dict]:
         """
-        Retrieve and sort starred repositories for a user.
+        Retrieve starred repositories for a user using GitHub API's native sorting.
 
         Args:
             username: GitHub username. If None, uses authenticated user.
-            sort_by: How to sort results. Options: "stars", "recent", "issues"
+            sort: Sort by 'created' or 'updated'. (default: 'updated').
+            direction: Sort direction - 'asc' or 'desc' (default: 'desc')
+            per_page: Number of results per page (default: 30, max: 100)
+            limit: Maximum total results to return. If None, returns all.
 
         Returns:
             List of dictionaries containing repository information
@@ -169,41 +177,74 @@ class GitHubTools:
         try:
             self._handle_rate_limit()
 
+            # Build the API endpoint
             if username:
-                user = self.github.get_user(username)
+                url = f"/users/{username}/starred"
             else:
-                user = self.github.get_user()
+                url = "/user/starred"
+
+            # Build query parameters
+            params: dict[str, str | int] = {"per_page": per_page}
+            if sort:
+                params["sort"] = sort
+                params["direction"] = direction
 
             starred_repos = []
-            page = 0
+            page = 1
 
             while True:
-                repos_page = user.get_starred().get_page(page)
-                if not repos_page:
+                # Add page parameter
+                params["page"] = page
+
+                # Make direct REST API call using PyGitHub's requester,
+                # as it doesn't currently support all params (such as sort)
+                _, data = self.github.requester.requestJsonAndCheck(
+                    "GET", url, parameters=params
+                )
+
+                if not data:
                     break
 
-                for repo in repos_page:
+                # Parse repository data
+                for repo in data:
                     repo_data = {
-                        "name": repo.full_name,
-                        "description": repo.description,
-                        "stars": repo.stargazers_count,
-                        "updated_at": repo.updated_at,
-                        "open_issues": repo.open_issues_count,
-                        "language": repo.language,
-                        "url": repo.html_url,
+                        "name": repo.get("full_name"),
+                        "description": repo.get("description"),
+                        "stars": repo.get("stargazers_count", 0),
+                        "updated_at": datetime.fromisoformat(repo["updated_at"])
+                        if repo.get("updated_at")
+                        else None,
+                        "created_at": datetime.fromisoformat(repo["created_at"])
+                        if repo.get("created_at")
+                        else None,
+                        "pushed_at": datetime.fromisoformat(repo["pushed_at"])
+                        if repo.get("pushed_at")
+                        else None,
+                        "open_issues": repo.get("open_issues_count", 0),
+                        "language": repo.get("language"),
+                        "url": repo.get("html_url"),
+                        "topics": repo.get("topics", []),
+                        "forks": repo.get("forks_count", 0),
+                        "size": repo.get("size"),
+                        "archived": repo.get("archived", False),
+                        "fork": repo.get("fork", False),
+                        "private": repo.get("private", False),
+                        "license": repo.get("license", {}).get("key")
+                        if repo.get("license")
+                        else None,
                     }
                     starred_repos.append(repo_data)
 
+                    # Check if we've reached the limit
+                    if limit and len(starred_repos) >= limit:
+                        return starred_repos[:limit]
+
+                # Less than max results means last page
+                if len(data) < per_page:
+                    break
+
                 page += 1
                 time.sleep(0.5)  # Be nice to the API
-
-            # Sort the results
-            if sort_by == "stars":
-                starred_repos.sort(key=lambda x: x["stars"], reverse=True)
-            elif sort_by == "recent":
-                starred_repos.sort(key=lambda x: x["updated_at"], reverse=True)
-            elif sort_by == "issues":
-                starred_repos.sort(key=lambda x: x["open_issues"], reverse=True)
 
             return starred_repos
 
