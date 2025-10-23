@@ -10,9 +10,8 @@ import json
 from functools import wraps
 from typing import Annotated
 
-from langchain.tools import BaseTool, StructuredTool
 from langchain_core.messages import AIMessage, ToolMessage
-from langchain_core.tools import InjectedToolCallId
+from langchain_core.tools import BaseTool, InjectedToolCallId, StructuredTool
 from langgraph.types import Command
 from pydantic import BaseModel
 

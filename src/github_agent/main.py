@@ -3,6 +3,9 @@ from typing import Literal
 
 import typer
 from dotenv import load_dotenv
+from langchain_core.messages import HumanMessage
+from langchain_core.runnables import RunnableConfig
+from langgraph.graph.state import CompiledStateGraph
 
 from core.config import get_resolved_model_name
 from core.models import TemplatedPrompt, ThreadedPrompt
@@ -13,6 +16,7 @@ from core.prompts import (
     topic_prompt,
 )
 from integrations.github.agent import close_agent_resources, create_configured_agent
+from integrations.github.models import GitHubToolState, get_empty_state
 from storage import ConversationStore
 
 # Load environment variables
@@ -21,16 +25,19 @@ load_dotenv()
 app = typer.Typer(rich_markup_mode="rich")
 
 
-def run_prompt(prompt: ThreadedPrompt, graph, thread_id: str):
+def run_prompt(
+    prompt: ThreadedPrompt,
+    graph: CompiledStateGraph[GitHubToolState],
+    thread_id: str,
+):
     # Configure thread
-    config = {"configurable": {"thread_id": thread_id}}
+    config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
 
-    # Run the analysis
     try:
-        # Initialize with our first message
-        # LangGraph's SqliteSaver will automatically persist all messages
         events = graph.stream(
-            {"messages": [("user", prompt.prompt)]}, config, stream_mode="values"
+            get_empty_state(messages=[HumanMessage(content=prompt.prompt)]),
+            config,
+            stream_mode="values",
         )
 
         # Track if we hit a stop condition
@@ -61,9 +68,11 @@ def run_prompt(prompt: ThreadedPrompt, graph, thread_id: str):
     # Only run follow-ups if we didn't stop
     if not should_stop:
         for follow_up in prompt.follow_ups:
-            # Messages automatically persisted by SqliteSaver
+            new_state = get_empty_state(messages=[HumanMessage(content=follow_up)])
             events = graph.stream(
-                {"messages": [("user", follow_up)]}, config, stream_mode="values"
+                new_state,
+                config,
+                stream_mode="values",
             )
 
             for event in events:
@@ -83,13 +92,12 @@ def run_prompt(prompt: ThreadedPrompt, graph, thread_id: str):
 def run_templated_prompt(
     prompt: TemplatedPrompt,
     user_args: list[str],
-    graph,
+    graph: CompiledStateGraph[GitHubToolState],
     thread_id: str,
 ):
-    # Configure thread
-    config = {"configurable": {"thread_id": thread_id}}
-
     call_args = {}
+
+    config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
 
     # Handle the case where we have multiple user args but only one template key
     # (e.g., multiple topics passed as comma-separated list)
@@ -112,7 +120,9 @@ def run_templated_prompt(
     # LangGraph's SqliteSaver will automatically persist all messages
     try:
         events = graph.stream(
-            {"messages": [("user", formatted_prompt)]}, config, stream_mode="values"
+            get_empty_state(messages=[HumanMessage(content=formatted_prompt)]),
+            config,
+            stream_mode="values",
         )
 
         for event in events:
@@ -612,7 +622,7 @@ def show(thread_id: str):
             print(f"\n{'-' * 70}\n")
 
 
-def run_interactive_session(graph, thread_id: str):
+def run_interactive_session(graph: CompiledStateGraph[GitHubToolState], thread_id: str):
     """Run an interactive chat session.
 
     Args:
@@ -620,7 +630,7 @@ def run_interactive_session(graph, thread_id: str):
         thread_id: Thread identifier for the conversation
         store: ConversationStore instance (for metadata only)
     """
-    config = {"configurable": {"thread_id": thread_id}}
+    config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
 
     # Interactive loop
     print("💬 Interactive mode (type 'exit' or 'quit' to end)\n")
@@ -639,7 +649,9 @@ def run_interactive_session(graph, thread_id: str):
             # Stream response
             # LangGraph's SqliteSaver will automatically persist all messages
             events = graph.stream(
-                {"messages": [("user", user_input)]}, config, stream_mode="values"
+                {"messages": [("user", user_input)]},
+                config,
+                stream_mode="values",
             )
 
             print("\nAssistant: ", end="", flush=True)
@@ -649,7 +661,7 @@ def run_interactive_session(graph, thread_id: str):
                     if hasattr(last_message, "content"):
                         print(last_message.content)
 
-            print()  # New line after response
+            print()
 
         except KeyboardInterrupt:
             print("\n\n👋 Ending conversation.")
