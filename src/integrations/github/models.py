@@ -1,8 +1,8 @@
 from datetime import datetime
-from typing import Annotated, Literal, TypedDict
+from typing import Annotated, Any, Literal, TypedDict
 
-from langgraph.graph.message import add_messages
-from pydantic import BaseModel, Field
+from langgraph.graph.message import BaseMessage, add_messages
+from pydantic import BaseModel, Field, field_validator
 
 
 class CommitChangeRecord(BaseModel):
@@ -88,26 +88,37 @@ class StarredRepoInput(BaseModel):
     """Input schema for starred repositories tool using GitHub API native sorting."""
 
     username: str | None = Field(
-        None, description="GitHub username. If not provided, uses authenticated user"
+        default=None,
+        description="GitHub username. If not provided, uses authenticated user",
     )
     sort: Literal["created", "updated"] | None = Field(
-        "updated",
+        default="updated",
         description=(
             "Sort by repository creation date or last update date. "
             "GitHub API native sort parameter."
         ),
     )
     direction: Literal["asc", "desc"] = Field(
-        "desc", description="Sort direction (desc shows most recent first)"
+        default="desc", description="Sort direction (desc shows most recent first)"
     )
-    per_page: int = Field(30, description="Number of results per page", ge=1, le=100)
+    per_page: int = Field(
+        default=30, description="Number of results per page", ge=1, le=100
+    )
     limit: int | None = Field(
-        50,
+        default=50,
         description=(
             "Maximum total results to return across all pages. If None, returns all."
         ),
         ge=1,
     )
+
+    @field_validator("per_page", mode="before")
+    @classmethod
+    def validate_per_page(cls, v: Any) -> int:
+        """Convert None to default value for per_page."""
+        if v is None:
+            return 30
+        return v
 
 
 class SearchRepoInput(BaseModel):
@@ -359,7 +370,7 @@ def add_repositories(
 
 
 # Define our graph state
-class GitHubToolState(TypedDict):
+class GitHubToolState(TypedDict, total=False):
     """The state of our GitHub analysis graph."""
 
     # Messages have the type "list". The add_messages function defines how
@@ -371,3 +382,12 @@ class GitHubToolState(TypedDict):
     current_predicate: str | None
     # Track repositories returned by tools for downstream access
     tracked_repositories: Annotated[list[RepositoryRecord], add_repositories]
+
+
+def get_empty_state(messages: list[BaseMessage]) -> GitHubToolState:
+    """
+    Get an empty GitHubToolState instance, optionally with message history.
+    """
+    return {
+        "messages": messages,
+    }
