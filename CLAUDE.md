@@ -55,8 +55,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 #### Analysis Commands
 - `uv run github-agent diagnostics` - Diagnose setup issues
-- `uv run github-agent pulse` - Analyze activity of starred repositories (supports `--sort`, `--direction`, `--limit`)
+- `uv run github-agent pulse` - Analyze activity of starred repositories
+  - Supports `--sort` (created, updated, pushed, full_name), `--direction` (asc, desc), `--limit`
+  - Filter options: `--language`, `--min-stars`, `--max-stars`, `--pushed-after`, `--archived`, `--fork`
 - `uv run github-agent topics "ai,machine-learning"` - Search repositories by topics
+  - Supports `--sort` (stars, forks, updated), `--limit`
+  - Filter options: `--language`, `--license`, `--min-stars`, `--max-stars`, `--pushed-after`, `--archived`, `--fork`
+- `uv run github-agent hotspots <owner/repo>` - Analyze commit hotspots and code churn
+  - Supports `--export-md` to export analysis as markdown
+  - Additional options: `--path`, `--strategy` (activity or rework), `--since`, `--until`
 - All analysis commands support `--thread-id` flag to resume existing conversations
 
 #### Conversation Management Commands
@@ -66,6 +73,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `uv run github-agent resume <thread-id>` - Resume and continue an existing conversation interactively
   - Interactive mode allows multi-turn conversations
   - Type 'exit' or 'quit' to end the session
+
+#### Web UI
+- `uv run github-agent ui` - Launch the Gradio web interface
+  - Provides a browser-based UI for topic search
+  - Includes conversation history browser
+  - Supports favoriting repositories
+  - Optional flags: `--share`, `--server-name`, `--server-port`
 
 #### Conversation Persistence
 - All conversations are automatically saved to `~/.github-agent/conversations.db`
@@ -146,10 +160,15 @@ def analyze_repository(repo):  # No type hints
    - Supports multiple LLM providers (Ollama, Anthropic, HuggingFace)
 
 4. **src/core/** - Core application models and prompts
-   - `models.py` - Pydantic models for templated and threaded prompts
-   - `prompts.py` - Predefined analysis prompts and workflows
+   - `models.py` - Pydantic models for prompts (`Prompt` and `TemplatedPrompt`)
+   - `prompts.py` - Predefined analysis prompts and workflows (starred_pulse, topic_prompt, hotspot_analysis, run_diagnostic)
    - `config.py` - Configuration management for LLM providers
    - `llm.py` - LLM initialization and setup
+
+5. **src/ui/** - Gradio web interface
+   - `app.py` - Main Gradio application with topic search and conversation history
+   - `components.py` - Reusable UI components
+   - `handlers.py` - Event handlers for search, favorites, and repository display
 
 ### Key Design Patterns
 
@@ -194,10 +213,26 @@ The tool includes commit hotspot analysis to identify files with high maintenanc
 
 The project uses uv for dependency management with these key libraries:
 - `pygithub` - GitHub API client
-- `langchain`, `langchain-anthropic`, `langchain-ollama`, `langchain-huggingface` - LLM framework and provider integrations
-- `langgraph` - State graph execution framework
+- `langchain>=1.0.0` - Core LLM framework (v1.x)
+- `langchain-anthropic>=1.0.0`, `langchain-ollama>=1.0.0`, `langchain-huggingface>=1.0.0` - LLM provider integrations (v1.x)
+- `langgraph>=1.0.0` - State graph execution framework (v1.x)
+- `langgraph-checkpoint-sqlite>=3.0.0` - SQLite-based state persistence
+- `langgraph-prebuilt>=1.0.0` - Pre-built LangGraph components
 - `python-dotenv` - Environment variable management
-- `pydantic` - Data validation and serialization
+- `pydantic`, `pydantic-settings>=2.11.0` - Data validation and configuration management
+- `typer` - CLI framework
+- `gradio>=5.0.0` - Web UI framework
+- `markdown>=3.9` - Markdown processing for exports
+
+### MCP Integration
+
+The project includes MCP (Model Context Protocol) server configuration for enhanced development with Claude Code:
+
+- **LangChain Docs MCP** - Provides access to LangChain documentation directly within Claude Code
+- Configuration file: `.mcp.json`
+- Enables real-time documentation lookup for LangChain, LangGraph, and related libraries
+
+This integration allows Claude Code to fetch up-to-date documentation when working with LangChain/LangGraph code.
 
 ### Workflow Architecture
 
