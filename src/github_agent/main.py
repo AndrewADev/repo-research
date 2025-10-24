@@ -8,7 +8,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.graph.state import CompiledStateGraph
 
 from core.config import get_resolved_model_name
-from core.models import TemplatedPrompt, ThreadedPrompt
+from core.models import TemplatedPrompt
 from core.prompts import (
     hotspot_analysis,
     run_diagnostic,
@@ -25,70 +25,6 @@ load_dotenv()
 app = typer.Typer(rich_markup_mode="rich")
 
 
-def run_prompt(
-    prompt: ThreadedPrompt,
-    graph: CompiledStateGraph[GitHubToolState],
-    thread_id: str,
-):
-    # Configure thread
-    config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
-
-    try:
-        events = graph.stream(
-            get_empty_state(messages=[HumanMessage(content=prompt.prompt)]),
-            config,
-            stream_mode="values",
-        )
-
-        # Track if we hit a stop condition
-        should_stop = False
-        stop_reason = None
-
-        # Print each event as it occurs
-        for event in events:
-            if "messages" in event:
-                last_message = event["messages"][-1]
-                print(f"Step output: {last_message.content}\n")
-
-                # Check for various stop conditions
-                if hasattr(last_message, "content"):
-                    content = last_message.content
-                    if "Execution Stopped Due to Diagnostics" in content:
-                        should_stop = True
-                        stop_reason = "diagnostics"
-                    elif "Task Concluded" in content:
-                        should_stop = True
-                        stop_reason = "no_results"
-
-    except Exception as e:
-        print(f"Error during analysis: {str(e)}")
-        should_stop = True
-        stop_reason = "exception"
-
-    # Only run follow-ups if we didn't stop
-    if not should_stop:
-        for follow_up in prompt.follow_ups:
-            new_state = get_empty_state(messages=[HumanMessage(content=follow_up)])
-            events = graph.stream(
-                new_state,
-                config,
-                stream_mode="values",
-            )
-
-            for event in events:
-                if "messages" in event:
-                    last_message = event["messages"][-1]
-                    print(f"Follow-up response: {last_message.content}\n")
-
-    else:
-        if stop_reason == "diagnostics":
-            print("⚠️ Skipping follow-up prompts due to diagnostic stop condition.")
-        elif stop_reason == "no_results":
-            print("✅ Task completed - no results found.")
-        elif stop_reason == "exception":
-            print("❌ Skipping follow-up prompts due to error.")
-
-
 def run_templated_prompt(
     prompt: TemplatedPrompt,
     user_args: list[str],
@@ -96,8 +32,6 @@ def run_templated_prompt(
     thread_id: str,
 ):
     call_args = {}
-
-    config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
 
     # Handle the case where we have multiple user args but only one template key
     # (e.g., multiple topics passed as comma-separated list)
@@ -116,6 +50,16 @@ def run_templated_prompt(
     # Format the template with the provided arguments
     formatted_prompt = prompt.template.format(**call_args)
 
+    run_prompt(formatted_prompt, graph, thread_id)
+
+
+def run_prompt(
+    formatted_prompt: str,
+    graph: CompiledStateGraph[GitHubToolState],
+    thread_id: str,
+):
+    config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
+
     # Run the formatted prompt through the graph
     # LangGraph's SqliteSaver will automatically persist all messages
     try:
@@ -131,7 +75,7 @@ def run_templated_prompt(
                 print(f"Response: {last_message.content}\n")
 
     except Exception as e:
-        print(f"Error during templated prompt execution: {str(e)}")
+        print(f"Error during prompt execution: {str(e)}")
 
 
 @app.command()
@@ -164,9 +108,7 @@ def diagnostics(
 
         agent = create_configured_agent(model_name)
         try:
-            # TODO: migrate away from legacy method run_prompt so
-            #   we can remove it
-            run_prompt(run_diagnostic, agent, thread_id)
+            run_prompt(run_diagnostic.content, agent, thread_id)
         finally:
             close_agent_resources(agent)
 
