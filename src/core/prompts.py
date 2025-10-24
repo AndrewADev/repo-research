@@ -1,6 +1,6 @@
 from langchain_core.prompts import PromptTemplate
 
-from core.models import TemplatedPrompt, ThreadedPrompt
+from core.models import Prompt, TemplatedPrompt
 
 starred_pulse = TemplatedPrompt(
     template=PromptTemplate.from_template(
@@ -22,15 +22,14 @@ starred_pulse = TemplatedPrompt(
     keys=["sort", "direction", "limit", "filters_text"],
 )
 
-run_diagnostic = ThreadedPrompt(
-    prompt="""
+run_diagnostic = Prompt(
+    content="""
 I want to run diagnostics on various settings.
 1. Please check the validity of the current GitHub token
 2. Please check the rate limit status of the current GitHub token
+
+When you are finished, please assess if any immediate issues have been identified.
 """,
-    follow_ups=[
-        "Have any immediate issues been identified?",
-    ],
 )
 
 
