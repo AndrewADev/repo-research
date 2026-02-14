@@ -59,10 +59,10 @@ class SearchHandler:
             yield "Please enter at least one topic.", [], favorites
             return
 
-        # Combine topics and language
+        # Prepare search parameters
         search_query = topics.strip()
-        if language and language != "Any":
-            search_query = f"{search_query},{language}"
+        language_filter = language if language and language != "Any" else ""
+        filters_text = f"Language: {language_filter}" if language_filter else ""
 
         # Generate thread ID
         thread_id = str(uuid.uuid4())
@@ -82,14 +82,21 @@ class SearchHandler:
             # Configure thread
             config = {"configurable": {"thread_id": thread_id}}
 
-            # Format prompt
-            call_args = {"topics": search_query}
-            if isinstance(topic_prompt.template, object) and hasattr(
-                topic_prompt.template, "format"
-            ):
-                formatted_prompt = topic_prompt.template.format(**call_args)
-            else:
-                formatted_prompt = str(topic_prompt.template)
+            # Format prompt with all required template variables
+            call_args = {
+                "topics": search_query,
+                "sort": "stars",
+                "limit": "10",
+                "language": language_filter,
+                "license": "",
+                "min_stars": "10",
+                "max_stars": "",
+                "pushed_after": "",
+                "archived": "",
+                "fork": "",
+                "filters_text": filters_text,
+            }
+            formatted_prompt = topic_prompt.template.format(**call_args)
 
             # Stream events
             events = agent.stream(
