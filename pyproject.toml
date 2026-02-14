@@ -30,7 +30,7 @@ github-agent = "github_agent.main:app"
 
 [project.optional-dependencies]
 dev = [
-    "ruff",
+    "ruff>=0.15.1,<1.0.0",
     "pytest",
     "pytest-mock",
 ]
