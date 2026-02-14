@@ -35,3 +35,7 @@ Present ideas in groups (e.g., "Quick Wins", "Medium Effort", "Big Bets"). For e
 - **How** (brief): Key technical considerations or approach sketch
 
 Keep the total to 5-10 ideas. Quality over quantity. Be opinionated — recommend your top 2-3 picks.
+
+## Saving ideas
+
+If the user asks to save the brainstorm results, write them as a markdown file to the ideas directory at `.claude/skills/brainstorm/ideas/`. Use a descriptive filename based on the focus area (e.g., `terminal-ux.md`, `integrations.md`, `new-commands.md`). Include the date at the top of the file. Check for existing files first to avoid overwriting previous brainstorms.

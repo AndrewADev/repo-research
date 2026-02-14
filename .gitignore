@@ -93,3 +93,6 @@ temp/
 .DS_Store
 Thumbs.db
 **/*.local.json
+
+# Coding assistants
+.claude/skills/brainstorm/ideas
