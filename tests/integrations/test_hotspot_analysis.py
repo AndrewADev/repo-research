@@ -5,7 +5,7 @@ Tests edge cases, metric calculations, and data validation without requiring
 network access or actual GitHub API calls.
 """
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -19,16 +19,17 @@ from integrations.github.models import (
 from integrations.github.tools import GitHubTools
 
 
-def setup_mock_github():
-    """Helper to setup a mock GitHub instance with rate limiting."""
-    mock_github = MagicMock()
+def setup_mock_github_client():
+    """Helper to setup a mock GitHub client with rate limiting."""
+    mock_client = MagicMock()
 
     # Mock rate limit
     mock_rate_limit = MagicMock()
-    mock_rate_limit.resources.core.remaining = 5000
-    mock_github.get_rate_limit.return_value = mock_rate_limit
+    mock_rate_limit.core.remaining = 5000
+    mock_client.get_rate_limit.return_value = mock_rate_limit
+    mock_client.check_rate_limit_and_wait.return_value = None
 
-    return mock_github
+    return mock_client
 
 
 class TestCommitHotspotInput:
@@ -208,22 +209,19 @@ class TestHotspotAnalysisResult:
 class TestAnalyzeCommitHotspotsEdgeCases:
     """Test edge cases for analyze_commit_hotspots method."""
 
-    @patch("integrations.github.tools.Github")
-    def test_empty_repository_no_commits(self, mock_github_class):
+    @patch("integrations.github.github_client.GitHubClient")
+    def test_empty_repository_no_commits(self, mock_client_class):
         """Test analysis on repository with no commits in time period."""
         # Setup mocks
-        mock_github = setup_mock_github()
-        mock_github_class.return_value = mock_github
-
-        mock_repo = MagicMock()
-        mock_github.get_repo.return_value = mock_repo
+        mock_client = setup_mock_github_client()
+        mock_client_class.return_value = mock_client
 
         # Empty commits list
-        mock_repo.get_commits.return_value = []
+        mock_client.get_repo_commits.return_value = []
 
         # Create GitHubTools instance
         tools = GitHubTools(token="test_token")
-        tools.github = mock_github
+        tools.client = mock_client
 
         # Execute analysis
         input_params = CommitHotspotInput(repo_full_name="owner/empty-repo", days=90)
@@ -235,33 +233,35 @@ class TestAnalyzeCommitHotspotsEdgeCases:
         assert result["total_files_changed"] == 0
         assert result["analysis_period_days"] == 90
 
-    @patch("integrations.github.tools.Github")
-    def test_single_file_single_commit(self, mock_github_class):
+    @patch("integrations.github.github_client.GitHubClient")
+    def test_single_file_single_commit(self, mock_client_class):
         """Test analysis with single commit changing single file."""
         # Setup mocks
-        mock_github = setup_mock_github()
-        mock_github_class.return_value = mock_github
+        mock_client = setup_mock_github_client()
+        mock_client_class.return_value = mock_client
 
-        mock_repo = MagicMock()
-        mock_github.get_repo.return_value = mock_repo
+        # Mock commit list and commit details
+        commit_summary = {"sha": "abc123"}
+        now = datetime.now()
+        commit_detail = {
+            "sha": "abc123",
+            "commit": {"author": {"date": now.isoformat() + "Z"}},
+            "author": {"login": "testuser"},
+            "files": [
+                {
+                    "filename": "README.md",
+                    "additions": 10,
+                    "deletions": 5,
+                }
+            ],
+        }
 
-        # Create mock commit with single file
-        mock_commit = MagicMock()
-        mock_commit.sha = "abc123"
-        mock_commit.commit.author.date = datetime.now()
-        mock_commit.author.login = "testuser"
-
-        mock_file = MagicMock()
-        mock_file.filename = "README.md"
-        mock_file.additions = 10
-        mock_file.deletions = 5
-
-        mock_commit.files = [mock_file]
-        mock_repo.get_commits.return_value = [mock_commit]
+        mock_client.get_repo_commits.return_value = [commit_summary]
+        mock_client.get_commit.return_value = commit_detail
 
         # Create GitHubTools instance
         tools = GitHubTools(token="test_token")
-        tools.github = mock_github
+        tools.client = mock_client
 
         # Execute analysis with min_changes=1 to capture single commit
         input_params = CommitHotspotInput(
@@ -281,37 +281,40 @@ class TestAnalyzeCommitHotspotsEdgeCases:
         assert result["total_commits_analyzed"] == 1
         assert result["total_files_changed"] == 1
 
-    @patch("integrations.github.tools.Github")
-    def test_max_commits_limit_respected(self, mock_github_class):
+    @patch("integrations.github.github_client.GitHubClient")
+    def test_max_commits_limit_respected(self, mock_client_class):
         """Test that max_commits limit stops processing early."""
         # Setup mocks
-        mock_github = setup_mock_github()
-        mock_github_class.return_value = mock_github
+        mock_client = setup_mock_github_client()
+        mock_client_class.return_value = mock_client
 
-        mock_repo = MagicMock()
-        mock_github.get_repo.return_value = mock_repo
+        # Create 1000 mock commit summaries
+        commit_summaries = [{"sha": f"commit{i}"} for i in range(1000)]
 
-        # Create 1000 mock commits but set limit to 10
-        mock_commits = []
-        for i in range(1000):
-            mock_commit = MagicMock()
-            mock_commit.sha = f"commit{i}"
-            mock_commit.commit.author.date = datetime.now()
-            mock_commit.author.login = "testuser"
+        # Only the first 10 will be fetched in detail
+        now = datetime.now()
 
-            mock_file = MagicMock()
-            mock_file.filename = f"file{i}.py"
-            mock_file.additions = 1
-            mock_file.deletions = 1
+        def get_commit_detail(owner, repo, sha):
+            i = int(sha.replace("commit", ""))
+            return {
+                "sha": sha,
+                "commit": {"author": {"date": now.isoformat() + "Z"}},
+                "author": {"login": "testuser"},
+                "files": [
+                    {
+                        "filename": f"file{i}.py",
+                        "additions": 1,
+                        "deletions": 1,
+                    }
+                ],
+            }
 
-            mock_commit.files = [mock_file]
-            mock_commits.append(mock_commit)
-
-        mock_repo.get_commits.return_value = mock_commits
+        mock_client.get_repo_commits.return_value = commit_summaries
+        mock_client.get_commit.side_effect = get_commit_detail
 
         # Create GitHubTools instance
         tools = GitHubTools(token="test_token")
-        tools.github = mock_github
+        tools.client = mock_client
 
         # Execute analysis with max_commits=10
         input_params = CommitHotspotInput(
@@ -323,37 +326,40 @@ class TestAnalyzeCommitHotspotsEdgeCases:
         assert result["total_commits_analyzed"] == 10
         assert result["total_files_changed"] == 10  # Each commit has unique file
 
-    @patch("integrations.github.tools.Github")
-    def test_multiple_changes_same_file(self, mock_github_class):
+    @patch("integrations.github.github_client.GitHubClient")
+    def test_multiple_changes_same_file(self, mock_client_class):
         """Test aggregation when same file changes multiple times."""
         # Setup mocks
-        mock_github = setup_mock_github()
-        mock_github_class.return_value = mock_github
-
-        mock_repo = MagicMock()
-        mock_github.get_repo.return_value = mock_repo
+        mock_client = setup_mock_github_client()
+        mock_client_class.return_value = mock_client
 
         # Create 5 commits all changing the same file
-        mock_commits = []
-        for i in range(5):
-            mock_commit = MagicMock()
-            mock_commit.sha = f"commit{i}"
-            mock_commit.commit.author.date = datetime.now() - timedelta(days=i)
-            mock_commit.author.login = f"user{i % 2}"  # Alternate between 2 authors
+        commit_summaries = [{"sha": f"commit{i}"} for i in range(5)]
+        now = datetime.now()
 
-            mock_file = MagicMock()
-            mock_file.filename = "main.py"
-            mock_file.additions = 10 + i
-            mock_file.deletions = 5 + i
+        def get_commit_detail(owner, repo, sha):
+            i = int(sha.replace("commit", ""))
+            return {
+                "sha": sha,
+                "commit": {
+                    "author": {"date": (now - timedelta(days=i)).isoformat() + "Z"}
+                },
+                "author": {"login": f"user{i % 2}"},  # Alternate between 2 authors
+                "files": [
+                    {
+                        "filename": "main.py",
+                        "additions": 10 + i,
+                        "deletions": 5 + i,
+                    }
+                ],
+            }
 
-            mock_commit.files = [mock_file]
-            mock_commits.append(mock_commit)
-
-        mock_repo.get_commits.return_value = mock_commits
+        mock_client.get_repo_commits.return_value = commit_summaries
+        mock_client.get_commit.side_effect = get_commit_detail
 
         # Create GitHubTools instance
         tools = GitHubTools(token="test_token")
-        tools.github = mock_github
+        tools.client = mock_client
 
         # Execute analysis
         input_params = CommitHotspotInput(
@@ -376,48 +382,49 @@ class TestAnalyzeCommitHotspotsEdgeCases:
         # Two unique authors
         assert hotspot["unique_authors"] == 2
 
-    @patch("integrations.github.tools.Github")
-    def test_min_changes_filter(self, mock_github_class):
+    @patch("integrations.github.github_client.GitHubClient")
+    def test_min_changes_filter(self, mock_client_class):
         """Test that min_changes filter excludes files below threshold."""
         # Setup mocks
-        mock_github = setup_mock_github()
-        mock_github_class.return_value = mock_github
-
-        mock_repo = MagicMock()
-        mock_github.get_repo.return_value = mock_repo
+        mock_client = setup_mock_github_client()
+        mock_client_class.return_value = mock_client
 
         # Create commits: file1 changes 5 times, file2 changes 2 times
-        mock_commits = []
-        for i in range(5):
-            mock_commit = MagicMock()
-            mock_commit.sha = f"commit{i}"
-            mock_commit.commit.author.date = datetime.now()
-            mock_commit.author.login = "testuser"
+        commit_summaries = [{"sha": f"commit{i}"} for i in range(5)]
+        now = datetime.now()
 
-            # Add file1 to all commits
-            mock_file1 = MagicMock()
-            mock_file1.filename = "file1.py"
-            mock_file1.additions = 5
-            mock_file1.deletions = 3
-
-            files = [mock_file1]
-
+        def get_commit_detail(owner, repo, sha):
+            i = int(sha.replace("commit", ""))
+            files = [
+                {
+                    "filename": "file1.py",
+                    "additions": 5,
+                    "deletions": 3,
+                }
+            ]
             # Add file2 only to first 2 commits
             if i < 2:
-                mock_file2 = MagicMock()
-                mock_file2.filename = "file2.py"
-                mock_file2.additions = 2
-                mock_file2.deletions = 1
-                files.append(mock_file2)
+                files.append(
+                    {
+                        "filename": "file2.py",
+                        "additions": 2,
+                        "deletions": 1,
+                    }
+                )
 
-            mock_commit.files = files
-            mock_commits.append(mock_commit)
+            return {
+                "sha": sha,
+                "commit": {"author": {"date": now.isoformat() + "Z"}},
+                "author": {"login": "testuser"},
+                "files": files,
+            }
 
-        mock_repo.get_commits.return_value = mock_commits
+        mock_client.get_repo_commits.return_value = commit_summaries
+        mock_client.get_commit.side_effect = get_commit_detail
 
         # Create GitHubTools instance
         tools = GitHubTools(token="test_token")
-        tools.github = mock_github
+        tools.client = mock_client
 
         # Execute analysis with min_changes=3
         input_params = CommitHotspotInput(
@@ -433,28 +440,28 @@ class TestAnalyzeCommitHotspotsEdgeCases:
         assert result["total_files_changed"] == 2  # Both were changed
         assert len([h for h in result["hotspots"] if h["file_path"] == "file2.py"]) == 0
 
-    @patch("integrations.github.tools.Github")
-    def test_commit_with_no_files(self, mock_github_class):
+    @patch("integrations.github.github_client.GitHubClient")
+    def test_commit_with_no_files(self, mock_client_class):
         """Test handling commits that have no file changes."""
         # Setup mocks
-        mock_github = setup_mock_github()
-        mock_github_class.return_value = mock_github
-
-        mock_repo = MagicMock()
-        mock_github.get_repo.return_value = mock_repo
+        mock_client = setup_mock_github_client()
+        mock_client_class.return_value = mock_client
 
         # Create commit with no files (e.g., merge commit)
-        mock_commit = MagicMock()
-        mock_commit.sha = "merge123"
-        mock_commit.commit.author.date = datetime.now()
-        mock_commit.author.login = "testuser"
-        mock_commit.files = []
+        commit_summary = {"sha": "merge123"}
+        commit_detail = {
+            "sha": "merge123",
+            "commit": {"author": {"date": datetime.now().isoformat() + "Z"}},
+            "author": {"login": "testuser"},
+            "files": [],
+        }
 
-        mock_repo.get_commits.return_value = [mock_commit]
+        mock_client.get_repo_commits.return_value = [commit_summary]
+        mock_client.get_commit.return_value = commit_detail
 
         # Create GitHubTools instance
         tools = GitHubTools(token="test_token")
-        tools.github = mock_github
+        tools.client = mock_client
 
         # Execute analysis
         input_params = CommitHotspotInput(
@@ -467,31 +474,23 @@ class TestAnalyzeCommitHotspotsEdgeCases:
         assert result["total_commits_analyzed"] == 1
         assert result["total_files_changed"] == 0
 
-    @patch("integrations.github.tools.Github")
-    def test_commit_with_file_access_error(self, mock_github_class):
-        """Test handling when accessing commit.files raises exception."""
+    @patch("integrations.github.github_client.GitHubClient")
+    def test_commit_with_file_access_error(self, mock_client_class):
+        """Test handling when get_commit raises exception."""
         # Setup mocks
-        mock_github = setup_mock_github()
-        mock_github_class.return_value = mock_github
+        mock_client = setup_mock_github_client()
+        mock_client_class.return_value = mock_client
 
-        mock_repo = MagicMock()
-        mock_github.get_repo.return_value = mock_repo
+        # Create commit summary
+        commit_summary = {"sha": "error123"}
 
-        # Create commit where accessing files raises exception
-        mock_commit = MagicMock()
-        mock_commit.sha = "error123"
-        mock_commit.commit.author.date = datetime.now()
-
-        # Make files property raise exception
-        type(mock_commit).files = property(
-            lambda self: (_ for _ in ()).throw(Exception("API error"))
-        )
-
-        mock_repo.get_commits.return_value = [mock_commit]
+        mock_client.get_repo_commits.return_value = [commit_summary]
+        # Make get_commit raise exception
+        mock_client.get_commit.side_effect = Exception("API error")
 
         # Create GitHubTools instance
         tools = GitHubTools(token="test_token")
-        tools.github = mock_github
+        tools.client = mock_client
 
         # Execute analysis - should not crash
         input_params = CommitHotspotInput(
@@ -504,37 +503,37 @@ class TestAnalyzeCommitHotspotsEdgeCases:
         # Commit was processed (and skipped due to error)
         assert result["total_commits_analyzed"] >= 0
 
-    @patch("integrations.github.tools.Github")
-    def test_churn_score_calculation(self, mock_github_class):
+    @patch("integrations.github.github_client.GitHubClient")
+    def test_churn_score_calculation(self, mock_client_class):
         """Test that churn score is calculated correctly."""
         # Setup mocks
-        mock_github = setup_mock_github()
-        mock_github_class.return_value = mock_github
-
-        mock_repo = MagicMock()
-        mock_github.get_repo.return_value = mock_repo
+        mock_client = setup_mock_github_client()
+        mock_client_class.return_value = mock_client
 
         # Create commits with specific values for predictable churn
-        mock_commits = []
-        for i in range(3):
-            mock_commit = MagicMock()
-            mock_commit.sha = f"commit{i}"
-            mock_commit.commit.author.date = datetime.now()
-            mock_commit.author.login = "testuser"
+        commit_summaries = [{"sha": f"commit{i}"} for i in range(3)]
+        now = datetime.now()
 
-            mock_file = MagicMock()
-            mock_file.filename = "calculate.py"
-            mock_file.additions = 20
-            mock_file.deletions = 10
+        def get_commit_detail(owner, repo, sha):
+            return {
+                "sha": sha,
+                "commit": {"author": {"date": now.isoformat() + "Z"}},
+                "author": {"login": "testuser"},
+                "files": [
+                    {
+                        "filename": "calculate.py",
+                        "additions": 20,
+                        "deletions": 10,
+                    }
+                ],
+            }
 
-            mock_commit.files = [mock_file]
-            mock_commits.append(mock_commit)
-
-        mock_repo.get_commits.return_value = mock_commits
+        mock_client.get_repo_commits.return_value = commit_summaries
+        mock_client.get_commit.side_effect = get_commit_detail
 
         # Create GitHubTools instance
         tools = GitHubTools(token="test_token")
-        tools.github = mock_github
+        tools.client = mock_client
 
         # Execute analysis
         input_params = CommitHotspotInput(
@@ -549,54 +548,59 @@ class TestAnalyzeCommitHotspotsEdgeCases:
         assert result["hotspots"][0]["total_deletions"] == 30
         assert result["hotspots"][0]["change_count"] == 3
 
-    @patch("integrations.github.tools.Github")
-    def test_hotspots_sorted_by_churn_score(self, mock_github_class):
+    @patch("integrations.github.github_client.GitHubClient")
+    def test_hotspots_sorted_by_churn_score(self, mock_client_class):
         """Test that hotspots are sorted by churn score descending."""
         # Setup mocks
-        mock_github = setup_mock_github()
-        mock_github_class.return_value = mock_github
-
-        mock_repo = MagicMock()
-        mock_github.get_repo.return_value = mock_repo
+        mock_client = setup_mock_github_client()
+        mock_client_class.return_value = mock_client
 
         # Create commits with different churn profiles
-        mock_commits = []
+        commit_summaries = []
+        now = datetime.now()
 
-        # File A: 5 changes, small diffs (churn = 50)
+        # File A: 5 changes
         for i in range(5):
-            mock_commit = MagicMock()
-            mock_commit.sha = f"fileA_{i}"
-            mock_commit.commit.author.date = datetime.now()
-            mock_commit.author.login = "userA"
+            commit_summaries.append({"sha": f"fileA_{i}"})
 
-            mock_file = MagicMock()
-            mock_file.filename = "fileA.py"
-            mock_file.additions = 5
-            mock_file.deletions = 5
-
-            mock_commit.files = [mock_file]
-            mock_commits.append(mock_commit)
-
-        # File B: 3 changes, large diffs (churn = 300)
+        # File B: 3 changes
         for i in range(3):
-            mock_commit = MagicMock()
-            mock_commit.sha = f"fileB_{i}"
-            mock_commit.commit.author.date = datetime.now()
-            mock_commit.author.login = "userB"
+            commit_summaries.append({"sha": f"fileB_{i}"})
 
-            mock_file = MagicMock()
-            mock_file.filename = "fileB.py"
-            mock_file.additions = 50
-            mock_file.deletions = 50
+        def get_commit_detail(owner, repo, sha):
+            if sha.startswith("fileA"):
+                return {
+                    "sha": sha,
+                    "commit": {"author": {"date": now.isoformat() + "Z"}},
+                    "author": {"login": "userA"},
+                    "files": [
+                        {
+                            "filename": "fileA.py",
+                            "additions": 5,
+                            "deletions": 5,
+                        }
+                    ],
+                }
+            else:
+                return {
+                    "sha": sha,
+                    "commit": {"author": {"date": now.isoformat() + "Z"}},
+                    "author": {"login": "userB"},
+                    "files": [
+                        {
+                            "filename": "fileB.py",
+                            "additions": 50,
+                            "deletions": 50,
+                        }
+                    ],
+                }
 
-            mock_commit.files = [mock_file]
-            mock_commits.append(mock_commit)
-
-        mock_repo.get_commits.return_value = mock_commits
+        mock_client.get_repo_commits.return_value = commit_summaries
+        mock_client.get_commit.side_effect = get_commit_detail
 
         # Create GitHubTools instance
         tools = GitHubTools(token="test_token")
-        tools.github = mock_github
+        tools.client = mock_client
 
         # Execute analysis
         input_params = CommitHotspotInput(
@@ -615,21 +619,18 @@ class TestAnalyzeCommitHotspotsEdgeCases:
         }
         assert file_paths == {"fileA.py", "fileB.py"}
 
-    @patch("integrations.github.tools.Github")
-    def test_path_filter_applied(self, mock_github_class):
-        """Test that path filter is correctly passed to get_commits."""
+    @patch("integrations.github.github_client.GitHubClient")
+    def test_path_filter_applied(self, mock_client_class):
+        """Test that path filter is correctly passed to get_repo_commits."""
         # Setup mocks
-        mock_github = setup_mock_github()
-        mock_github_class.return_value = mock_github
+        mock_client = setup_mock_github_client()
+        mock_client_class.return_value = mock_client
 
-        mock_repo = MagicMock()
-        mock_github.get_repo.return_value = mock_repo
-
-        mock_repo.get_commits.return_value = []
+        mock_client.get_repo_commits.return_value = []
 
         # Create GitHubTools instance
         tools = GitHubTools(token="test_token")
-        tools.github = mock_github
+        tools.client = mock_client
 
         # Execute analysis with path filter
         input_params = CommitHotspotInput(
@@ -640,40 +641,41 @@ class TestAnalyzeCommitHotspotsEdgeCases:
         )
         result = tools.analyze_commit_hotspots(input_params)
 
-        # Verify get_commits was called with path parameter
-        mock_repo.get_commits.assert_called_once()
-        call_kwargs = mock_repo.get_commits.call_args.kwargs
+        # Verify get_repo_commits was called with path parameter
+        mock_client.get_repo_commits.assert_called_once()
+        call_kwargs = mock_client.get_repo_commits.call_args.kwargs
         assert "path" in call_kwargs
         assert call_kwargs["path"] == "src/integrations"
         assert result["path_filter"] == "src/integrations"
 
-    @patch("integrations.github.tools.Github")
-    def test_author_without_login(self, mock_github_class):
+    @patch("integrations.github.github_client.GitHubClient")
+    def test_author_without_login(self, mock_client_class):
         """Test handling commits where author has no login."""
         # Setup mocks
-        mock_github = setup_mock_github()
-        mock_github_class.return_value = mock_github
-
-        mock_repo = MagicMock()
-        mock_github.get_repo.return_value = mock_repo
+        mock_client = setup_mock_github_client()
+        mock_client_class.return_value = mock_client
 
         # Create commit with None author
-        mock_commit = MagicMock()
-        mock_commit.sha = "noauthor123"
-        mock_commit.commit.author.date = datetime.now()
-        mock_commit.author = None  # No GitHub user account
+        commit_summary = {"sha": "noauthor123"}
+        commit_detail = {
+            "sha": "noauthor123",
+            "commit": {"author": {"date": datetime.now().isoformat() + "Z"}},
+            "author": None,  # No GitHub user account
+            "files": [
+                {
+                    "filename": "test.py",
+                    "additions": 10,
+                    "deletions": 5,
+                }
+            ],
+        }
 
-        mock_file = MagicMock()
-        mock_file.filename = "test.py"
-        mock_file.additions = 10
-        mock_file.deletions = 5
-
-        mock_commit.files = [mock_file]
-        mock_repo.get_commits.return_value = [mock_commit]
+        mock_client.get_repo_commits.return_value = [commit_summary]
+        mock_client.get_commit.return_value = commit_detail
 
         # Create GitHubTools instance
         tools = GitHubTools(token="test_token")
-        tools.github = mock_github
+        tools.client = mock_client
 
         # Execute analysis - should not crash
         input_params = CommitHotspotInput(
@@ -685,44 +687,46 @@ class TestAnalyzeCommitHotspotsEdgeCases:
         assert len(result["hotspots"]) == 1
         assert result["hotspots"][0]["unique_authors"] == 0  # No author recorded
 
-    @patch("integrations.github.tools.Github")
-    def test_date_tracking(self, mock_github_class):
+    @patch("integrations.github.github_client.GitHubClient")
+    def test_date_tracking(self, mock_client_class):
         """Test that first_changed and last_changed are tracked correctly."""
         # Setup mocks
-        mock_github = setup_mock_github()
-        mock_github_class.return_value = mock_github
+        mock_client = setup_mock_github_client()
+        mock_client_class.return_value = mock_client
 
-        mock_repo = MagicMock()
-        mock_github.get_repo.return_value = mock_repo
-
-        # Create commits with specific dates
-        now = datetime.now()
+        # Create commits with specific dates (with UTC timezone)
+        now = datetime.now(UTC)
         dates = [
             now - timedelta(days=30),  # First
             now - timedelta(days=20),  # Middle
             now - timedelta(days=10),  # Last
         ]
 
-        mock_commits = []
-        for i, date in enumerate(dates):
-            mock_commit = MagicMock()
-            mock_commit.sha = f"commit{i}"
-            mock_commit.commit.author.date = date
-            mock_commit.author.login = "testuser"
+        commit_summaries = [{"sha": f"commit{i}"} for i in range(3)]
 
-            mock_file = MagicMock()
-            mock_file.filename = "track.py"
-            mock_file.additions = 5
-            mock_file.deletions = 3
+        def get_commit_detail(owner, repo, sha):
+            i = int(sha.replace("commit", ""))
+            return {
+                "sha": sha,
+                "commit": {
+                    "author": {"date": dates[i].isoformat().replace("+00:00", "Z")}
+                },
+                "author": {"login": "testuser"},
+                "files": [
+                    {
+                        "filename": "track.py",
+                        "additions": 5,
+                        "deletions": 3,
+                    }
+                ],
+            }
 
-            mock_commit.files = [mock_file]
-            mock_commits.append(mock_commit)
-
-        mock_repo.get_commits.return_value = mock_commits
+        mock_client.get_repo_commits.return_value = commit_summaries
+        mock_client.get_commit.side_effect = get_commit_detail
 
         # Create GitHubTools instance
         tools = GitHubTools(token="test_token")
-        tools.github = mock_github
+        tools.client = mock_client
 
         # Execute analysis
         input_params = CommitHotspotInput(

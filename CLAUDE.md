@@ -212,7 +212,7 @@ The tool includes commit hotspot analysis to identify files with high maintenanc
 ### Dependencies
 
 The project uses uv for dependency management with these key libraries:
-- `pygithub` - GitHub API client
+- `requests` - HTTP library for custom GitHub API client
 - `langchain>=1.0.0` - Core LLM framework (v1.x)
 - `langchain-anthropic>=1.0.0`, `langchain-ollama>=1.0.0`, `langchain-huggingface>=1.0.0` - LLM provider integrations (v1.x)
 - `langgraph>=1.0.0` - State graph execution framework (v1.x)
@@ -223,6 +223,8 @@ The project uses uv for dependency management with these key libraries:
 - `typer` - CLI framework
 - `gradio>=5.0.0` - Web UI framework
 - `markdown>=3.9` - Markdown processing for exports
+
+**Note:** The project uses a custom GitHub API client (`src/integrations/github/github_client.py`) for better control, reduced dependencies, and type safety.
 
 ### MCP Integration
 

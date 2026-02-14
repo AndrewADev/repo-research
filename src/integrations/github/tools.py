@@ -6,7 +6,7 @@ specifically designed to be used as tools by an AI agent. Each function is
 self-contained and handles its own error checking and rate limiting.
 
 Requirements:
-    - PyGithub
+    - requests
     - python-dotenv
 """
 
@@ -17,8 +17,7 @@ from typing import TYPE_CHECKING
 
 from dotenv import load_dotenv
 
-from github import Auth, Github, GithubException
-from github.GithubObject import NotSet
+from .github_client import GitHubAPIError, GitHubClient
 
 if TYPE_CHECKING:
     from .models import (
@@ -142,16 +141,11 @@ class GitHubTools:
         if not token:
             raise ValueError("GitHub token not provided and not found in environment")
 
-        self.auth = Auth.Token(token)
-        self.github = Github(auth=self.auth)
+        self.client = GitHubClient(token)
 
     def _handle_rate_limit(self) -> None:
         """Check rate limit and sleep if necessary."""
-        rate_limit = self.github.get_rate_limit()
-        if rate_limit.resources.core.remaining < 10:
-            reset_time = rate_limit.resources.core.reset.timestamp() - time.time()
-            if reset_time > 0:
-                time.sleep(reset_time)
+        self.client.check_rate_limit_and_wait()
 
     def get_starred_repositories(
         self,
@@ -177,11 +171,11 @@ class GitHubTools:
         try:
             self._handle_rate_limit()
 
-            # Build the API endpoint
+            # Get starred repos from our custom client
             if username:
-                url = f"/users/{username}/starred"
+                endpoint = f"/users/{username}/starred"
             else:
-                url = "/user/starred"
+                endpoint = "/user/starred"
 
             # Build query parameters
             params: dict[str, str | int] = {"per_page": per_page}
@@ -192,33 +186,44 @@ class GitHubTools:
             starred_repos = []
             page = 1
 
+            # Custom header to get topics
+            custom_headers = {"Accept": "application/vnd.github.mercy-preview+json"}
+
             while True:
                 # Add page parameter
                 params["page"] = page
 
-                # Make direct REST API call using PyGitHub's requester,
-                # as it doesn't currently support all params (such as sort)
-                _, data = self.github.requester.requestJsonAndCheck(
-                    "GET", url, parameters=params
-                )
+                # Make API call
+                data = self.client.get(endpoint, params, custom_headers=custom_headers)
 
                 if not data:
                     break
 
                 # Parse repository data
                 for repo in data:
+                    # Parse ISO datetime strings, removing 'Z' suffix
+                    updated_at_str = repo.get("updated_at")
+                    created_at_str = repo.get("created_at")
+                    pushed_at_str = repo.get("pushed_at")
+
                     repo_data = {
                         "name": repo.get("full_name"),
                         "description": repo.get("description"),
                         "stars": repo.get("stargazers_count", 0),
-                        "updated_at": datetime.fromisoformat(repo["updated_at"])
-                        if repo.get("updated_at")
+                        "updated_at": datetime.fromisoformat(
+                            updated_at_str.replace("Z", "+00:00")
+                        )
+                        if updated_at_str
                         else None,
-                        "created_at": datetime.fromisoformat(repo["created_at"])
-                        if repo.get("created_at")
+                        "created_at": datetime.fromisoformat(
+                            created_at_str.replace("Z", "+00:00")
+                        )
+                        if created_at_str
                         else None,
-                        "pushed_at": datetime.fromisoformat(repo["pushed_at"])
-                        if repo.get("pushed_at")
+                        "pushed_at": datetime.fromisoformat(
+                            pushed_at_str.replace("Z", "+00:00")
+                        )
+                        if pushed_at_str
                         else None,
                         "open_issues": repo.get("open_issues_count", 0),
                         "language": repo.get("language"),
@@ -248,7 +253,7 @@ class GitHubTools:
 
             return starred_repos
 
-        except GithubException as e:
+        except GitHubAPIError as e:
             raise Exception(f"GitHub API error: {str(e)}") from e
 
     def analyze_repository_activity(self, repo_full_name: str) -> dict:
@@ -264,38 +269,60 @@ class GitHubTools:
         try:
             self._handle_rate_limit()
 
-            repo = self.github.get_repo(repo_full_name)
+            # Split owner and repo name
+            owner, repo_name = repo_full_name.split("/", 1)
+
+            # Get repository details
+            repo = self.client.get_repo(owner, repo_name)
 
             # Get recent commits (last 30 days)
-            recent_commits = 0
-            thirty_days_ago = datetime.now().timestamp() - (30 * 24 * 60 * 60)
-
-            for commit in repo.get_commits():
-                if commit.commit.author.date.timestamp() < thirty_days_ago:
-                    break
-                recent_commits += 1
+            thirty_days_ago = datetime.now() - timedelta(days=30)
+            commits = self.client.get_repo_commits(
+                owner, repo_name, since=thirty_days_ago
+            )
+            recent_commits = len(commits)
 
             # Get open issues and PRs
-            open_issues = repo.get_issues(state="open").totalCount
-            open_prs = repo.get_pulls(state="open").totalCount
+            open_issues_list = self.client.get_repo_issues(
+                owner, repo_name, state="open"
+            )
+            # Filter out pull requests (GitHub API treats PRs as issues)
+            open_issues = len(
+                [issue for issue in open_issues_list if "pull_request" not in issue]
+            )
+
+            open_prs_list = self.client.get_repo_pulls(owner, repo_name, state="open")
+            open_prs = len(open_prs_list)
+
+            # Parse dates
+            pushed_at_str = repo.get("pushed_at")
+            created_at_str = repo.get("created_at")
 
             activity_data = {
                 "recent_commits": recent_commits,
-                "name": repo.full_name,
-                "description": repo.description,
+                "name": repo["full_name"],
+                "description": repo.get("description"),
                 "open_issues": open_issues,
                 "open_pull_requests": open_prs,
-                "stargazers": repo.stargazers_count,
-                "forks": repo.forks_count,
-                "last_push": repo.pushed_at,
-                "created_at": repo.created_at,
-                "primary_language": repo.language,
-                "topics": repo.topics,
+                "stargazers": repo["stargazers_count"],
+                "forks": repo["forks_count"],
+                "last_push": datetime.fromisoformat(
+                    pushed_at_str.replace("Z", "+00:00")
+                )
+                if pushed_at_str
+                else None,
+                "created_at": datetime.fromisoformat(
+                    created_at_str.replace("Z", "+00:00")
+                )
+                if created_at_str
+                else None,
+                "primary_language": repo.get("language"),
+                "topics": repo.get("topics", []),
             }
 
             return activity_data
 
-        except GithubException as e:
+        except GitHubAPIError as e:
             raise Exception(f"GitHub API error: {str(e)}") from e
 
     def search_repositories(
@@ -316,28 +343,33 @@ class GitHubTools:
         try:
             self._handle_rate_limit()
 
+            repositories = self.client.search_repositories(query=query, sort=sort)
+
+            if not repositories:
+                return []
+
             results = []
-            repositories_pages = self.github.search_repositories(query=query, sort=sort)
-
-            if repositories_pages.totalCount < 1:
-                return results
-
-            for repo in repositories_pages[:limit]:
+            for repo in repositories[:limit]:
+                updated_at_str = repo.get("updated_at")
                 repo_data = {
-                    "name": repo.full_name,
-                    "description": repo.description,
-                    "stars": repo.stargazers_count,
-                    "forks": repo.forks_count,
-                    "language": repo.language,
-                    "url": repo.html_url,
-                    "updated_at": repo.updated_at,
-                    "topics": repo.topics,
+                    "name": repo["full_name"],
+                    "description": repo.get("description"),
+                    "stars": repo["stargazers_count"],
+                    "forks": repo["forks_count"],
+                    "language": repo.get("language"),
+                    "url": repo["html_url"],
+                    "updated_at": datetime.fromisoformat(
+                        updated_at_str.replace("Z", "+00:00")
+                    )
+                    if updated_at_str
+                    else None,
+                    "topics": repo.get("topics", []),
                 }
                 results.append(repo_data)
 
             return results
 
-        except GithubException as e:
+        except GitHubAPIError as e:
             raise Exception(f"GitHub API error: {str(e)}") from e
 
     def get_user_profile(self, username: str | None = None) -> dict:
@@ -354,26 +386,38 @@ class GitHubTools:
             self._handle_rate_limit()
 
             if username:
-                user = self.github.get_user(username)
+                user = self.client.get_user(username)
             else:
-                user = self.github.get_user()
+                user = self.client.get_authenticated_user()
+
+            # Parse dates
+            created_at_str = user.get("created_at")
+            updated_at_str = user.get("updated_at")
 
             profile_data = {
-                "login": user.login,
-                "name": user.name,
-                "bio": user.bio,
-                "location": user.location,
-                "public_repos": user.public_repos,
-                "followers": user.followers,
-                "following": user.following,
-                "created_at": user.created_at,
-                "updated_at": user.updated_at,
-                "email": user.email,
+                "login": user["login"],
+                "name": user.get("name"),
+                "bio": user.get("bio"),
+                "location": user.get("location"),
+                "public_repos": user.get("public_repos", 0),
+                "followers": user.get("followers", 0),
+                "following": user.get("following", 0),
+                "created_at": datetime.fromisoformat(
+                    created_at_str.replace("Z", "+00:00")
+                )
+                if created_at_str
+                else None,
+                "updated_at": datetime.fromisoformat(
+                    updated_at_str.replace("Z", "+00:00")
+                )
+                if updated_at_str
+                else None,
+                "email": user.get("email"),
             }
 
             return profile_data
 
-        except GithubException as e:
+        except GitHubAPIError as e:
             raise Exception(f"GitHub API error: {str(e)}") from e
 
     def check_rate_limit_status(self) -> dict:
@@ -384,41 +428,32 @@ class GitHubTools:
             Dictionary containing rate limit information for all endpoints
         """
         try:
-            rate_limit = self.github.get_rate_limit()
-
-            # Core rate limit (most API calls)
-            core = rate_limit.resources.core
-
-            # Search rate limit (search API calls)
-            search = rate_limit.resources.search
-
-            # GraphQL rate limit
-            graphql = rate_limit.resources.graphql
+            rate_limit = self.client.get_rate_limit()
 
             status = {
                 "core": {
-                    "limit": core.limit,
-                    "remaining": core.remaining,
-                    "reset_time": core.reset.strftime("%Y-%m-%d %H:%M:%S UTC"),
-                    "reset_timestamp": core.reset.timestamp(),
+                    "limit": rate_limit.core.limit,
+                    "remaining": rate_limit.core.remaining,
+                    "reset_time": rate_limit.core.reset_time,
+                    "reset_timestamp": rate_limit.core.reset_timestamp,
                 },
                 "search": {
-                    "limit": search.limit,
-                    "remaining": search.remaining,
-                    "reset_time": search.reset.strftime("%Y-%m-%d %H:%M:%S UTC"),
-                    "reset_timestamp": search.reset.timestamp(),
+                    "limit": rate_limit.search.limit,
+                    "remaining": rate_limit.search.remaining,
+                    "reset_time": rate_limit.search.reset_time,
+                    "reset_timestamp": rate_limit.search.reset_timestamp,
                 },
                 "graphql": {
-                    "limit": graphql.limit,
-                    "remaining": graphql.remaining,
-                    "reset_time": graphql.reset.strftime("%Y-%m-%d %H:%M:%S UTC"),
-                    "reset_timestamp": graphql.reset.timestamp(),
+                    "limit": rate_limit.graphql.limit,
+                    "remaining": rate_limit.graphql.remaining,
+                    "reset_time": rate_limit.graphql.reset_time,
+                    "reset_timestamp": rate_limit.graphql.reset_timestamp,
                 },
             }
 
             return status
 
-        except GithubException as e:
+        except GitHubAPIError as e:
             raise Exception(f"GitHub API error: {str(e)}") from e
 
     def validate_token(self) -> dict:
@@ -430,40 +465,32 @@ class GitHubTools:
         """
         try:
             # Test authentication by getting the authenticated user
-            user = self.github.get_user()
+            user = self.client.get_authenticated_user()
 
             # Get rate limit information to understand token capabilities
-            rate_limit = self.github.get_rate_limit()
-
-            # Attempt to get token metadata (scopes, etc.)
-            # Note: The GitHub API doesn't expose all token details via REST API
-            # but we can infer some information from successful operations
+            rate_limit = self.client.get_rate_limit()
 
             validation_data = {
                 "valid": True,
                 "authenticated_user": {
-                    "login": user.login,
-                    "name": user.name,
-                    "type": user.type,
-                    "id": user.id,
-                    "public_repos": user.public_repos,
-                    "followers": user.followers,
-                    "following": user.following,
+                    "login": user["login"],
+                    "name": user.get("name"),
+                    "type": user.get("type"),
+                    "id": user.get("id"),
+                    "public_repos": user.get("public_repos", 0),
+                    "followers": user.get("followers", 0),
+                    "following": user.get("following", 0),
                 },
                 "rate_limits": {
                     "core": {
-                        "limit": rate_limit.resources.core.limit,
-                        "remaining": rate_limit.resources.core.remaining,
-                        "reset_time": rate_limit.resources.core.reset.strftime(
-                            "%Y-%m-%d %H:%M:%S UTC"
-                        ),
+                        "limit": rate_limit.core.limit,
+                        "remaining": rate_limit.core.remaining,
+                        "reset_time": rate_limit.core.reset_time,
                     },
                     "search": {
-                        "limit": rate_limit.resources.search.limit,
-                        "remaining": rate_limit.resources.search.remaining,
-                        "reset_time": rate_limit.resources.search.reset.strftime(
-                            "%Y-%m-%d %H:%M:%S UTC"
-                        ),
+                        "limit": rate_limit.search.limit,
+                        "remaining": rate_limit.search.remaining,
+                        "reset_time": rate_limit.search.reset_time,
                     },
                 },
                 "token_info": {
@@ -475,7 +502,7 @@ class GitHubTools:
 
             return validation_data
 
-        except GithubException as e:
+        except GitHubAPIError as e:
             # Token is invalid or has insufficient permissions
             error_details = {
                 "valid": False,
@@ -484,19 +511,19 @@ class GitHubTools:
             }
 
             # Provide more specific error information based on status code
-            if hasattr(e, "status"):
-                if e.status == 401:
+            if e.status_code:
+                if e.status_code == 401:
                     error_details["issue"] = "Invalid token or token has expired"
-                elif e.status == 403:
+                elif e.status_code == 403:
                     error_details["issue"] = (
                         "Token lacks required permissions or rate limit exceeded"
                     )
-                elif e.status == 404:
+                elif e.status_code == 404:
                     error_details["issue"] = (
                         "Token may be valid but lacks access to requested resources"
                     )
                 else:
-                    error_details["issue"] = f"HTTP {e.status} error occurred"
+                    error_details["issue"] = f"HTTP {e.status_code} error occurred"
 
             return error_details
         except Exception as e:
@@ -521,21 +548,25 @@ class GitHubTools:
         try:
             self._handle_rate_limit()
 
-            repo = self.github.get_repo(repo_full_name)
+            # Split owner and repo name
+            owner, repo_name = repo_full_name.split("/", 1)
+
+            # Get labels
+            labels_data = self.client.get_repo_labels(owner, repo_name)
             labels = []
 
-            for label in repo.get_labels():
+            for label in labels_data:
                 label_data = {
-                    "name": label.name,
-                    "color": label.color,
-                    "description": label.description,
-                    "url": label.url,
+                    "name": label["name"],
+                    "color": label["color"],
+                    "description": label.get("description"),
+                    "url": label["url"],
                 }
                 labels.append(label_data)
 
             return labels
 
-        except GithubException as e:
+        except GitHubAPIError as e:
             raise Exception(f"GitHub API error: {str(e)}") from e
 
     def search_repositories_by_topic(
@@ -556,38 +587,52 @@ class GitHubTools:
             # Build search query from parameters
             query = build_repository_search_query(search_params)
 
-            results = []
-            repositories_pages = self.github.search_repositories(
+            repositories = self.client.search_repositories(
                 query=query, sort=search_params.sort
             )
 
-            if repositories_pages.totalCount < 1:
-                return results
+            if not repositories:
+                return []
 
-            for repo in repositories_pages[: search_params.limit]:
-                # Get topics for this repository
-                repo_topics = []
-                try:
-                    repo_topics = repo.get_topics()
-                except Exception:
-                    # If we can't get topics, continue without them
-                    pass
+            results = []
+            for repo in repositories[: search_params.limit]:
+                # Get topics for this repository (should be in response)
+                repo_topics = repo.get("topics", [])
+
+                # Parse dates
+                updated_at_str = repo.get("updated_at")
+                created_at_str = repo.get("created_at")
+                pushed_at_str = repo.get("pushed_at")
 
                 repo_data = {
-                    "name": repo.full_name,
-                    "description": repo.description,
-                    "stars": repo.stargazers_count,
-                    "forks": repo.forks_count,
-                    "language": repo.language,
-                    "url": repo.html_url,
-                    "updated_at": repo.updated_at,
-                    "created_at": repo.created_at,
-                    "pushed_at": repo.pushed_at,
-                    "size": repo.size,
-                    "archived": repo.archived,
-                    "fork": repo.fork,
-                    "private": repo.private,
-                    "license": repo.license.key if repo.license else None,
+                    "name": repo["full_name"],
+                    "description": repo.get("description"),
+                    "stars": repo["stargazers_count"],
+                    "forks": repo["forks_count"],
+                    "language": repo.get("language"),
+                    "url": repo["html_url"],
+                    "updated_at": datetime.fromisoformat(
+                        updated_at_str.replace("Z", "+00:00")
+                    )
+                    if updated_at_str
+                    else None,
+                    "created_at": datetime.fromisoformat(
+                        created_at_str.replace("Z", "+00:00")
+                    )
+                    if created_at_str
+                    else None,
+                    "pushed_at": datetime.fromisoformat(
+                        pushed_at_str.replace("Z", "+00:00")
+                    )
+                    if pushed_at_str
+                    else None,
+                    "size": repo.get("size"),
+                    "archived": repo.get("archived", False),
+                    "fork": repo.get("fork", False),
+                    "private": repo.get("private", False),
+                    "license": repo.get("license", {}).get("key")
+                    if repo.get("license")
+                    else None,
                     "topics": repo_topics,
                     "matched_topics": [
                         topic for topic in search_params.topics if topic in repo_topics
@@ -598,7 +643,7 @@ class GitHubTools:
 
             return results
 
-        except GithubException as e:
+        except GitHubAPIError as e:
             raise Exception(f"GitHub API error: {str(e)}") from e
 
     def query_issues(self, query_params: "QueryIssuesInput") -> list[dict]:
@@ -614,38 +659,53 @@ class GitHubTools:
         try:
             self._handle_rate_limit()
 
-            repo = self.github.get_repo(query_params.repo_full_name)
+            # Split owner and repo name
+            owner, repo_name = query_params.repo_full_name.split("/", 1)
 
             # Get issues with filters
-            issues_paginated = repo.get_issues(
+            issues_list = self.client.get_repo_issues(
+                owner=owner,
+                repo=repo_name,
                 state=query_params.state,
-                labels=query_params.labels or [],
+                labels=query_params.labels,
                 sort=query_params.sort,
                 direction=query_params.direction,
-                since=query_params.since if query_params.since else NotSet,
+                since=query_params.since,
+                per_page=min(100, query_params.limit * 2),
             )
 
             results = []
-            # Use slice notation for lazy pagination - only fetch what we need
-            for issue in issues_paginated[: query_params.limit * 2]:
+            for issue in issues_list:
                 # Filter out pull requests (GitHub API treats PRs as issues)
-                if issue.pull_request is not None:
+                if "pull_request" in issue:
                     continue
 
                 # Extract label names
-                label_names = [label.name for label in issue.labels]
+                label_names = [label["name"] for label in issue.get("labels", [])]
+
+                # Parse dates
+                created_at_str = issue.get("created_at")
+                updated_at_str = issue.get("updated_at")
 
                 issue_data = {
-                    "number": issue.number,
-                    "title": issue.title,
-                    "state": issue.state,
+                    "number": issue["number"],
+                    "title": issue["title"],
+                    "state": issue["state"],
                     "labels": label_names,
-                    "author": issue.user.login if issue.user else None,
-                    "created_at": issue.created_at,
-                    "updated_at": issue.updated_at,
-                    "url": issue.html_url,
-                    "comments_count": issue.comments,
-                    "body": issue.body[:500] if issue.body else None,
+                    "author": issue["user"]["login"] if issue.get("user") else None,
+                    "created_at": datetime.fromisoformat(
+                        created_at_str.replace("Z", "+00:00")
+                    )
+                    if created_at_str
+                    else None,
+                    "updated_at": datetime.fromisoformat(
+                        updated_at_str.replace("Z", "+00:00")
+                    )
+                    if updated_at_str
+                    else None,
+                    "url": issue["html_url"],
+                    "comments_count": issue.get("comments", 0),
+                    "body": issue.get("body", "")[:500] if issue.get("body") else None,
                 }
                 results.append(issue_data)
 
@@ -655,7 +715,7 @@ class GitHubTools:
 
             return results
 
-        except GithubException as e:
+        except GitHubAPIError as e:
             raise Exception(f"GitHub API error: {str(e)}") from e
 
     def analyze_commit_hotspots(self, hotspot_params: "CommitHotspotInput") -> dict:
@@ -671,6 +731,8 @@ class GitHubTools:
         Returns:
             Dictionary containing hotspot analysis results
         """
+        import base64
+
         from .churn_strategies import (
             ReworkRateStrategy,
             TotalActivityChurnStrategy,
@@ -680,7 +742,8 @@ class GitHubTools:
         try:
             self._handle_rate_limit()
 
-            repo = self.github.get_repo(hotspot_params.repo_full_name)
+            # Split owner and repo name
+            owner, repo_name = hotspot_params.repo_full_name.split("/", 1)
 
             # Calculate time window
             date_range_end = datetime.now()
@@ -706,78 +769,97 @@ class GitHubTools:
                 try:
                     # Get repository tree at the start of analysis period
                     # Find the commit closest to date_range_start
-                    commits_at_start = repo.get_commits(until=date_range_start)
-                    try:
+                    commits_at_start = self.client.get_repo_commits(
+                        owner,
+                        repo_name,
+                        until=date_range_start,
+                        per_page=1,
+                        max_pages=1,
+                    )
+                    if commits_at_start:
                         baseline_commit = commits_at_start[0]
-                        tree = repo.get_git_tree(baseline_commit.sha, recursive=True)
+                        tree = self.client.get_git_tree(
+                            owner, repo_name, baseline_commit["sha"], recursive=True
+                        )
 
                         # Count LOC for each file
-                        for item in tree.tree:
-                            if item.type == "blob":  # It's a file, not a directory
+                        for item in tree.get("tree", []):
+                            if item["type"] == "blob":  # It's a file, not a directory
                                 try:
                                     # Fetch file contents
-                                    blob = repo.get_git_blob(item.sha)
-                                    if blob.encoding == "base64":
+                                    blob = self.client.get_git_blob(
+                                        owner, repo_name, item["sha"]
+                                    )
+                                    if blob.get("encoding") == "base64":
                                         # Decode and count lines
-                                        import base64
-
-                                        content = base64.b64decode(blob.content).decode(
-                                            "utf-8", errors="ignore"
-                                        )
+                                        content = base64.b64decode(
+                                            blob["content"]
+                                        ).decode("utf-8", errors="ignore")
                                         loc = len(content.splitlines())
-                                        baseline_loc_map[item.path] = loc
+                                        baseline_loc_map[item["path"]] = loc
                                 except Exception:
                                     # Skip files we can't read
                                     continue
-
-                    except IndexError:
-                        # No commits at baseline, use empty baseline
-                        pass
 
                 except Exception as baseline_error:
                     print(f"Warning: Could not fetch baseline LOC: {baseline_error}")
 
             # Get commits with optional path filter
-            if hotspot_params.path:
-                commits = repo.get_commits(
-                    since=date_range_start, path=hotspot_params.path
-                )
-            else:
-                commits = repo.get_commits(since=date_range_start)
+            # Calculate max pages based on max_commits
+            max_pages = (hotspot_params.max_commits + 99) // 100  # Round up
+
+            commits = self.client.get_repo_commits(
+                owner=owner,
+                repo=repo_name,
+                since=date_range_start,
+                path=hotspot_params.path,
+                per_page=100,
+                max_pages=max_pages,
+            )
 
             commits_analyzed = 0
 
             # Process commits up to max_commits limit
-            for commit in commits:
-                if commits_analyzed >= hotspot_params.max_commits:
-                    break
-
+            for commit_summary in commits[: hotspot_params.max_commits]:
                 self._handle_rate_limit()
 
-                # Access commit files
+                # Get full commit details with file changes
                 try:
-                    for file in commit.files:
+                    commit = self.client.get_commit(
+                        owner, repo_name, commit_summary["sha"]
+                    )
+
+                    # Access commit files
+                    for file in commit.get("files", []):
+                        # Parse commit date
+                        commit_date_str = commit["commit"]["author"]["date"]
+                        commit_date = datetime.fromisoformat(
+                            commit_date_str.replace("Z", "+00:00")
+                        )
+
                         # Record the file change with commit SHA
                         tracker.record_file_change(
-                            file_path=file.filename,
-                            additions=file.additions,
-                            deletions=file.deletions,
-                            author_login=commit.author.login if commit.author else None,
-                            commit_date=commit.commit.author.date,
-                            commit_sha=commit.sha,
+                            file_path=file["filename"],
+                            additions=file.get("additions", 0),
+                            deletions=file.get("deletions", 0),
+                            author_login=commit["author"]["login"]
+                            if commit.get("author")
+                            else None,
+                            commit_date=commit_date,
+                            commit_sha=commit["sha"],
                         )
 
                         # Set baseline LOC if available
-                        if file.filename in baseline_loc_map:
+                        if file["filename"] in baseline_loc_map:
                             tracker.set_baseline_loc(
-                                file.filename, baseline_loc_map[file.filename]
+                                file["filename"], baseline_loc_map[file["filename"]]
                             )
 
                 except Exception as file_error:
                     # Log but continue if we can't access files for a commit
                     error_msg = (
                         f"Warning: Could not access files for "
-                        f"commit {commit.sha}: {file_error}"
+                        f"commit {commit_summary['sha']}: {file_error}"
                     )
                     print(error_msg)
                     continue
@@ -802,9 +884,9 @@ class GitHubTools:
 
             return result
 
-        except GithubException as e:
+        except GitHubAPIError as e:
             raise Exception(f"GitHub API error: {str(e)}") from e
 
     def close(self) -> None:
         """Close the GitHub connection."""
-        self.github.close()
+        self.client.close()
