@@ -24,10 +24,14 @@ wheels/
 venv/
 env/
 ENV/
-.env
 .venv
 pip-log.txt
 pip-delete-this-directory.txt
+
+# Environment files — catch all variants, allow examples through
+.env*
+!.env.example
+!.env.sample
 
 # IDE specific files
 .idea/
@@ -46,9 +50,15 @@ pip-delete-this-directory.txt
 config.ini
 credentials.json
 secrets.yaml
-.env.local
-.env.*.local
 auth_config.json
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
 
 # Jupyter Notebook
 .ipynb_checkpoints
@@ -93,6 +103,10 @@ temp/
 .DS_Store
 Thumbs.db
 **/*.local.json
+*.log
+*.bak
+*.orig
+.local
 
 # Coding assistants
-.claude/skills/brainstorm/ideas
+.claude/**/*.local.json
