@@ -13,7 +13,7 @@ from langchain_core.messages import HumanMessage
 
 from core.config import get_resolved_model_name
 from core.prompts import topic_prompt
-from github_agent.main import close_agent_resources, create_configured_agent
+from integrations.github.agent import close_agent_resources, create_configured_agent
 from integrations.github.models import RepositoryRecord
 from storage import ConversationStore
 from ui.favorites import FavoritesState, SavedRepository
