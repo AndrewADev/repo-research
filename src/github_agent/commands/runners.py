@@ -1,3 +1,7 @@
+import os
+import traceback
+from typing import Any
+
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph.state import CompiledStateGraph
@@ -10,6 +14,8 @@ from integrations.github.models import GitHubToolState, get_empty_state
 from storage import ConversationStore
 
 console = Console()
+
+DEBUG_ENV_VAR = "GITHUB_AGENT_DEBUG"
 
 
 def print_prompt_header(prompt_text: str) -> None:
@@ -51,6 +57,76 @@ def run_templated_prompt(
     run_prompt(formatted_prompt, graph, thread_id)
 
 
+def _summarize_message(msg: Any) -> str:
+    """One-line debug description of a graph message: type, name, sizes, tool refs."""
+    cls = type(msg).__name__
+    parts = [cls]
+    name = getattr(msg, "name", None)
+    if name:
+        parts.append(f"name={name}")
+    tool_calls = getattr(msg, "tool_calls", None) or []
+    if tool_calls:
+        names = [
+            (tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", "?"))
+            for tc in tool_calls
+        ]
+        parts.append(f"tool_calls={names}")
+    tool_call_id = getattr(msg, "tool_call_id", None)
+    if tool_call_id:
+        parts.append(f"tool_call_id={tool_call_id[:8]}…")
+    content = getattr(msg, "content", None)
+    if content is None:
+        parts.append("content=None")
+    elif isinstance(content, str):
+        parts.append(f"content_len={len(content)}")
+    else:
+        parts.append(f"content_type={type(content).__name__}")
+    return f"<{' '.join(parts)}>"
+
+
+def _format_recent_messages(event: dict | None, n: int = 4) -> str:
+    if not event or "messages" not in event or not event["messages"]:
+        return "(no messages in last graph event)"
+    msgs = event["messages"][-n:]
+    return "\n    ".join(_summarize_message(m) for m in msgs)
+
+
+def _report_prompt_error(e: Exception, last_event: dict | None) -> None:
+    """Surface as much actionable detail as possible from a graph.stream failure."""
+    debug = bool(os.environ.get(DEBUG_ENV_VAR))
+
+    console.print()
+    console.print("[bold red]Error during prompt execution[/bold red]")
+    exc_type = f"{type(e).__module__}.{type(e).__name__}"
+    console.print(f"  [bold]Exception:[/bold] {exc_type}")
+    message = str(e) or "(empty message)"
+    console.print(f"  [bold]Message:[/bold] {rich_escape(message)}")
+
+    # If this is a requests/HfHubHTTPError-shaped exception, the HTTP body is
+    # where the real diagnostic lives. str(e) often discards it.
+    response = getattr(e, "response", None)
+    if response is not None:
+        status = getattr(response, "status_code", "?")
+        try:
+            body = response.text
+        except Exception:  # pragma: no cover - defensive
+            body = "(response.text unreadable)"
+        console.print(f"  [bold]HTTP status:[/bold] {status}")
+        console.print(f"  [bold]HTTP body:[/bold] {rich_escape(body) or '(empty)'}")
+
+    # Show the graph state at the point of failure so we can correlate the
+    # error with which step / which tool round-trip blew up.
+    console.print(
+        f"  [bold]Recent messages:[/bold]\n    {_format_recent_messages(last_event)}"
+    )
+
+    if debug:
+        console.print("\n[bold]Traceback:[/bold]")
+        traceback.print_exc()
+    else:
+        console.print(f"\n  (Set [bold]{DEBUG_ENV_VAR}=1[/bold] for full traceback.)")
+
+
 def run_prompt(
     formatted_prompt: str,
     graph: CompiledStateGraph[GitHubToolState],
@@ -60,6 +136,7 @@ def run_prompt(
 
     # Run the formatted prompt through the graph
     # LangGraph's SqliteSaver will automatically persist all messages
+    last_event: dict | None = None
     try:
         events = graph.stream(
             get_empty_state(messages=[HumanMessage(content=formatted_prompt)]),
@@ -68,6 +145,7 @@ def run_prompt(
         )
 
         for event in events:
+            last_event = event
             if "messages" in event:
                 last_message = event["messages"][-1]
                 if isinstance(last_message, HumanMessage):
@@ -75,7 +153,7 @@ def run_prompt(
                 print(f"Response: {last_message.content}\n")
 
     except Exception as e:
-        print(f"Error during prompt execution: {str(e)}")
+        _report_prompt_error(e, last_event)
 
 
 def run_interactive_session(graph: CompiledStateGraph[GitHubToolState], thread_id: str):
