@@ -11,15 +11,12 @@ jobs:
     steps:
     - uses: actions/checkout@v5
 
-    - name: Set up Python
-      uses: actions/setup-python@v6
-      with:
-        python-version-file: '.python-version'
-
     - name: Install uv
       uses: astral-sh/setup-uv@v6
       with:
         version: "latest"
+        enable-cache: true
+        python-version-file: '.python-version'
 
     - name: Install dependencies
       run: |
@@ -34,15 +31,12 @@ jobs:
     steps:
     - uses: actions/checkout@v5
 
-    - name: Set up Python
-      uses: actions/setup-python@v6
-      with:
-        python-version-file: '.python-version'
-
     - name: Install uv
       uses: astral-sh/setup-uv@v6
       with:
         version: "latest"
+        enable-cache: true
+        python-version-file: '.python-version'
 
     - name: Install dependencies
       run: |
@@ -60,15 +54,12 @@ jobs:
     steps:
     - uses: actions/checkout@v5
 
-    - name: Set up Python
-      uses: actions/setup-python@v6
-      with:
-        python-version-file: '.python-version'
-
     - name: Install uv
       uses: astral-sh/setup-uv@v6
       with:
         version: "latest"
+        enable-cache: true
+        python-version-file: '.python-version'
 
     - name: Install dependencies
       run: |
