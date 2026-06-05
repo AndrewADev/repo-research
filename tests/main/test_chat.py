@@ -5,16 +5,20 @@ import uuid
 import pytest
 
 from github_agent.main import chat, resume_conversation, run_interactive_session
+from tests.conftest import empty_async_iter, recording_async_iter
 
 
 @pytest.fixture
 def mock_graph(mocker):
-    """Create a mock LangGraph instance."""
+    """Create a mock LangGraph instance whose astream_events yields nothing.
+
+    The mock's `astream_events.calls` list records every invocation, so tests
+    can assert on the state/config the runner passed in.
+    """
     graph = mocker.MagicMock()
-    # Mock stream to return a simple response
-    mock_message = mocker.MagicMock()
-    mock_message.content = "Test response"
-    graph.stream.return_value = [{"messages": [mock_message]}]
+    astream, calls = recording_async_iter()
+    graph.astream_events = astream
+    graph.astream_events.calls = calls  # type: ignore[attr-defined]
     return graph
 
 
@@ -38,11 +42,18 @@ class TestRunInteractiveSession:
 
         run_interactive_session(mock_graph, thread_id)
 
-        # Verify graph.stream was called with the user input
-        mock_graph.stream.assert_called_once()
-        call_args = mock_graph.stream.call_args
-        assert call_args[0][0]["messages"][0] == ("user", "Hello")
-        assert call_args[0][1]["configurable"]["thread_id"] == thread_id
+        # Verify graph.astream_events was called once with the user input.
+        calls = mock_graph.astream_events.calls  # type: ignore[attr-defined]
+        assert len(calls) == 1
+        # State is the first positional arg; config follows positionally or
+        # is passed as a kwarg.
+        state = calls[0]["args"][0]
+        assert state["messages"][0] == ("user", "Hello")
+        config = calls[0]["kwargs"].get("config") or (
+            calls[0]["args"][1] if len(calls[0]["args"]) > 1 else None
+        )
+        assert config is not None
+        assert config["configurable"]["thread_id"] == thread_id
 
     @pytest.mark.parametrize("exit_command", ["exit", "quit"])
     def test_handles_exit_commands(self, mock_store, mock_graph, mocker, exit_command):
@@ -271,9 +282,7 @@ class TestIntegration:
         )
 
         mock_graph = mocker.MagicMock()
-        mock_message = mocker.MagicMock()
-        mock_message.content = "Test response"
-        mock_graph.stream.return_value = [{"messages": [mock_message]}]
+        mock_graph.astream_events = empty_async_iter
         mock_create_graph_chat.return_value = mock_graph
         mock_create_graph_runners.return_value = mock_graph
 

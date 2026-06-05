@@ -256,8 +256,12 @@ def create_graph(
         conn = sqlite3.connect(db_path, check_same_thread=False)
         memory = SqliteSaver(conn)
 
-    # Compile and return the graph
-    return graph.compile(checkpointer=memory, name="GitHubAgent")
+    # Compile the graph. We attach the db_path so async callers (the AG-UI
+    # runner) can swap the sync SqliteSaver for an AsyncSqliteSaver during
+    # `astream_events`, which requires async checkpoint methods.
+    compiled = graph.compile(checkpointer=memory, name="GitHubAgent")
+    compiled._db_path = db_path  # type: ignore[attr-defined]
+    return compiled
 
 
 def create_configured_agent(
