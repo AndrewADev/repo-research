@@ -42,6 +42,7 @@ def create_llm(
             model=model_name,
             base_url=provider_config.ollama_base_url,
             temperature=temperature,
+            num_predict=-1,
         )
 
     if provider_config.llm_provider == "anthropic":
@@ -64,6 +65,7 @@ def create_llm(
             task="text-generation",
             temperature=temperature,
             huggingfacehub_api_token=provider_config.huggingface_api_key,
+            max_new_tokens=4096,
         )
         return ChatHuggingFace(llm=llm)
 

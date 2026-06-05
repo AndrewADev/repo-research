@@ -12,6 +12,7 @@ from github_agent.commands.runners import (
     _summarize_message,
 )
 from github_agent.main import run_templated_prompt
+from tests.conftest import raising_async_iter, recording_async_iter
 
 
 class TestRunTemplatedPrompt:
@@ -24,14 +25,12 @@ class TestRunTemplatedPrompt:
             keys=["query"],
         )
 
+        astream, calls = recording_async_iter()
         mock_graph = mocker.MagicMock()
-        mock_message = mocker.MagicMock()
-        mock_message.content = "Mock response"
-        mock_graph.stream.return_value = [{"messages": [mock_message]}]
+        mock_graph.astream_events = astream
 
         thread_id = str(uuid.uuid4())
 
-        # Test with special characters
         special_values = [
             "search \"quotes\" and 'apostrophes'",
             "newlines\nand\ttabs",
@@ -40,13 +39,12 @@ class TestRunTemplatedPrompt:
         ]
 
         for value in special_values:
+            calls.clear()
             run_templated_prompt(prompt, [value], mock_graph, thread_id)
 
-            # Verify the value was passed through correctly
-            call_args = mock_graph.stream.call_args
-            state = call_args[0][0]
-            actual_content = state["messages"][0].content
-            assert value in actual_content
+            assert calls, "expected astream_events to be called"
+            state = calls[0]["args"][0]
+            assert value in state["messages"][0].content
 
     def test_graph_exception_handling(self, mocker, capsys):
         """Test that exceptions during graph execution are caught and reported."""
@@ -55,12 +53,16 @@ class TestRunTemplatedPrompt:
             keys=["key"],
         )
 
+        # emit_agui_events catches the exception and emits a RunErrorEvent;
+        # the renderer surfaces it as an "Error:" line in stdout.
         mock_graph = mocker.MagicMock()
-        mock_graph.stream.side_effect = RuntimeError("Graph execution failed")
+        mock_graph.astream_events = raising_async_iter(
+            RuntimeError("Graph execution failed")
+        )
 
         thread_id = str(uuid.uuid4())
 
-        # Should not raise exception, should print error
+        # Should not raise; the renderer prints an "Error:" line.
         run_templated_prompt(prompt, ["value"], mock_graph, thread_id)
 
         # Verify error was printed

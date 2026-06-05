@@ -1,9 +1,58 @@
 """Shared test fixtures and utilities."""
 
+from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime
 from typing import Any
 
 import pytest
+
+# ----------------------------------------------------------------------------
+# Async-generator helpers for mocking `graph.astream_events`.
+#
+# `async def` without any `yield` produces a coroutine, not an async generator,
+# so the unreachable `yield` below is load-bearing — it makes Python compile
+# the function as an async generator that simply returns immediately.
+# ----------------------------------------------------------------------------
+
+
+async def empty_async_iter(*_args: Any, **_kwargs: Any) -> AsyncIterator[Any]:
+    """Async generator that yields nothing. Drop-in for `graph.astream_events`
+    in mock-based tests where you just need the call to complete cleanly."""
+    return
+    yield  # unreachable; marks this as an async generator
+
+
+def raising_async_iter(exc: Exception) -> Callable[..., AsyncIterator[Any]]:
+    """Return an async-generator function that raises `exc` on first iteration.
+
+    Used to simulate failures inside the graph stream, which `emit_agui_events`
+    converts to a `RunErrorEvent` for the renderer to display.
+    """
+
+    async def _gen(*_args: Any, **_kwargs: Any) -> AsyncIterator[Any]:
+        raise exc
+        yield  # unreachable; marks this as an async generator
+
+    return _gen
+
+
+def recording_async_iter() -> tuple[
+    Callable[..., AsyncIterator[Any]], list[dict[str, Any]]
+]:
+    """Return `(fn, calls)` where `fn` is an empty async-generator mock and
+    `calls` records every invocation's args/kwargs.
+
+    Lets tests assert on how `graph.astream_events` was called without having
+    to wire up a full mock with `side_effect` plumbing.
+    """
+    calls: list[dict[str, Any]] = []
+
+    async def _gen(*args: Any, **kwargs: Any) -> AsyncIterator[Any]:
+        calls.append({"args": args, "kwargs": kwargs})
+        return
+        yield  # unreachable; marks this as an async generator
+
+    return _gen, calls
 
 
 class MockConversationStore:
