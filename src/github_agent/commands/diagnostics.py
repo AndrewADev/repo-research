@@ -1,13 +1,14 @@
 import uuid
 
 import typer
+from rich.markup import escape as rich_escape
 
 from core.config import get_resolved_model_name
 from core.prompts import run_diagnostic
 from integrations.github.agent import close_agent_resources, create_configured_agent
 from storage import ConversationStore
 
-from .runners import run_prompt
+from .runners import print_prompt_header, run_prompt
 
 
 def diagnostics(
@@ -39,6 +40,7 @@ def diagnostics(
 
         agent = create_configured_agent(model_name)
         try:
+            print_prompt_header(rich_escape(run_diagnostic.content))
             run_prompt(run_diagnostic.content, agent, thread_id)
         finally:
             close_agent_resources(agent)

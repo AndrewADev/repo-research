@@ -8,7 +8,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
+exclude-newer = "2026-05-29T15:53:23.876908Z"
 exclude-newer-span = "P7D"
 
 [[package]]
@@ -369,6 +369,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "python-dotenv" },
     { name = "requests" },
+    { name = "rich" },
     { name = "typer" },
 ]
 
@@ -405,6 +406,7 @@ requires-dist = [
     { name = "pytest-mock", marker = "extra == 'dev'" },
     { name = "python-dotenv", specifier = ">=1.2.1,<2.0.0" },
     { name = "requests", specifier = ">=2.32.0,<3.0.0" },
+    { name = "rich", specifier = ">=15.0.0,<16.0.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.15.1,<1.0.0" },
     { name = "typer", specifier = ">=0.23.1,<1.0.0" },
 ]
