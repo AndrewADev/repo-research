@@ -564,7 +564,7 @@ def run_diagnostics_node(state: GitHubToolState):
     diagnostic_message = AIMessage(
         content=(
             "🔍 **Error Detected - Running Diagnostics**\n\n"
-            f"{run_diagnostic.prompt}"
+            f"{run_diagnostic.content}"
             "Are we able to continue our task?"
         )
     )
