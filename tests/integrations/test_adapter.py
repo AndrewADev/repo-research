@@ -4,9 +4,15 @@ Unit tests for GitHub adapter functions.
 Tests data transformation and parsing functions without requiring network access.
 """
 
+import json
 from datetime import datetime
 
-from integrations.github.adapter import parse_repository_data
+from langchain_core.messages import AIMessage, ToolMessage
+
+from integrations.github.adapter import (
+    parse_repository_data,
+    result_analysis_condition,
+)
 from integrations.github.models import RepositoryRecord
 
 
@@ -172,3 +178,54 @@ class TestParseRepositoryData:
         assert "python" in result.topics
         assert "machine-learning" in result.topics
         assert "nlp" in result.topics
+
+
+class TestResultAnalysisCondition:
+    """Branching logic that decides whether to run diagnostics after a tool call."""
+
+    def _state(self, content: str, message_cls=ToolMessage):
+        if message_cls is ToolMessage:
+            msg = ToolMessage(content=content, tool_call_id="call_1")
+        else:
+            msg = AIMessage(content=content)
+        return {"messages": [msg]}
+
+    def test_real_error_payload_triggers_diagnostics(self):
+        payload = json.dumps({"error": "GitHub API returned 401"})
+        assert result_analysis_condition(self._state(payload)) == "run_diagnostics"
+
+    def test_description_containing_word_errors_does_not_trigger(self):
+        """Regression: description containing 'errors' must not trip diagnostics."""
+        payload = json.dumps(
+            {
+                "results": [
+                    {
+                        "name": "hyperdxio/hyperdx",
+                        "description": (
+                            "An observability platform unifying session replays, "
+                            "logs, metrics, traces and errors powered by ClickHouse."
+                        ),
+                    }
+                ],
+                "search_metadata": {"has_results": True, "total_found": 1},
+            }
+        )
+        assert result_analysis_condition(self._state(payload)) == "continue"
+
+    def test_topic_containing_error_monitoring_does_not_trigger(self):
+        payload = json.dumps(
+            {
+                "results": [{"name": "foo/bar", "topics": ["error-monitoring"]}],
+                "search_metadata": {"has_results": True, "total_found": 1},
+            }
+        )
+        assert result_analysis_condition(self._state(payload)) == "continue"
+
+    def test_no_results_payload_routes_to_no_results_handler(self):
+        payload = json.dumps(
+            {"results": [], "search_metadata": {"has_results": False, "total_found": 0}}
+        )
+        assert result_analysis_condition(self._state(payload)) == "handle_no_results"
+
+    def test_empty_state_returns_continue(self):
+        assert result_analysis_condition({"messages": []}) == "continue"
