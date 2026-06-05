@@ -6,12 +6,14 @@ models for input validation and schema generation.
 
 """
 
+import functools
 import json
+import logging
 import re
 from functools import wraps
 from typing import Annotated
 
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langchain_core.tools import BaseTool, InjectedToolCallId, StructuredTool
 from langgraph.types import Command
 from pydantic import BaseModel
@@ -32,6 +34,133 @@ from .models import (
     TokenValidationInput,
 )
 from .tools import GitHubTools
+
+logger = logging.getLogger(__name__)
+
+
+def _ensure_tool_call_id(tool_name: str, tool_call_id: str | None) -> str:
+    """Return ``tool_call_id`` if provided, otherwise log loudly and generate one.
+
+    A missing ``tool_call_id`` inside a tool's ``_run`` means upstream id
+    propagation silently failed. Thus, tool call IDs will be mismatched
+    We still generate one so the graph can continue, but we warn loudly so
+    the underlying defect can't hide.
+    """
+    if tool_call_id is not None:
+        return tool_call_id
+    logger.warning(
+        "Tool %r received no tool_call_id; falling back to a generated id. "
+        "This indicates upstream id propagation failed in call_tools and "
+        "will produce a tool_call_id mismatch the next time the LLM is "
+        "invoked.",
+        tool_name,
+    )
+    return generate_tool_call_id(tool_name)
+
+
+def normalize_tool_message_ids(messages: list[BaseMessage]) -> list[BaseMessage]:
+    """Repair ``ToolMessage.tool_call_id`` mismatches before sending to the LLM.
+
+    This helper walks the history and, for each orphan, attempts to pair by
+    ``name`` + position against the most recent assistant turn's unconsumed tool_calls.
+    Rewrites the ``ToolMessage`` (without mutating the input) and logs a warning so
+    the upstream bug stays visible.
+
+    Returns a new list; never mutates the input or its messages. Messages
+    that aren't ToolMessages, or whose ids already match, are passed through
+    by reference.
+    """
+    fixed: list[BaseMessage] = []
+    # Tracks tool_calls from the most recently seen AIMessage.
+    pending: list[dict] = []  # [{"id": str, "name": str, "consumed": bool}, ...]
+
+    def _warn_unconsumed(entries: list[dict]) -> None:
+        for p in entries:
+            if not p["consumed"]:
+                logger.warning(
+                    "AIMessage tool_call(id=%r, name=%s) has no corresponding "
+                    "ToolMessage response in history. The next LLM call may "
+                    "be rejected by the provider's chat template.",
+                    p["id"],
+                    p["name"],
+                )
+
+    for msg in messages:
+        if isinstance(msg, AIMessage):
+            # Surface any tool_calls from the *previous* AIMessage that were
+            # never answered before the conversation moved on.
+            _warn_unconsumed(pending)
+            pending = []
+            for tc in msg.tool_calls or []:
+                tc_id = (
+                    tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None)
+                )
+                tc_name = (
+                    tc.get("name")
+                    if isinstance(tc, dict)
+                    else getattr(tc, "name", None)
+                )
+                if tc_id:
+                    pending.append({"id": tc_id, "name": tc_name, "consumed": False})
+            fixed.append(msg)
+            continue
+
+        if isinstance(msg, ToolMessage):
+            valid = next(
+                (
+                    p
+                    for p in pending
+                    if p["id"] == msg.tool_call_id and not p["consumed"]
+                ),
+                None,
+            )
+            if valid is not None:
+                valid["consumed"] = True
+                fixed.append(msg)
+                continue
+
+            # Orphan: try to pair by name + position (first unconsumed match).
+            candidate = next(
+                (p for p in pending if not p["consumed"] and p["name"] == msg.name),
+                None,
+            )
+            if candidate is not None:
+                logger.warning(
+                    "Rewriting ToolMessage(name=%s).tool_call_id from %r to %r "
+                    "to match the preceding AIMessage tool_call. Upstream id "
+                    "propagation failed somewhere.",
+                    msg.name,
+                    msg.tool_call_id,
+                    candidate["id"],
+                )
+                candidate["consumed"] = True
+                fixed.append(
+                    ToolMessage(
+                        content=msg.content,
+                        tool_call_id=candidate["id"],
+                        name=msg.name,
+                    )
+                )
+                continue
+
+            # Unpairable. Drop it: leaving an orphan ToolMessage in history
+            # guarantees a provider chat-template error on the next LLM call.
+            logger.warning(
+                "Dropping orphan ToolMessage(name=%s, tool_call_id=%r): no "
+                "preceding AIMessage tool_call to pair with. Persisted state "
+                "is left untouched; this drop is in-memory for the LLM call.",
+                msg.name,
+                msg.tool_call_id,
+            )
+            continue
+
+        fixed.append(msg)
+
+    # Final flush: tool_calls on the *last* AIMessage that never got a
+    # response.
+    _warn_unconsumed(pending)
+
+    return fixed
 
 
 def parse_repository_data(repo_dict: dict) -> RepositoryRecord:
@@ -87,6 +216,10 @@ class StarredRepositoriesTool(BaseTool):
     """
     args_schema: type[BaseModel] = StarredRepoInput
 
+    @functools.cached_property
+    def _injected_args_keys(self) -> frozenset[str]:
+        return frozenset({"tool_call_id"})
+
     @with_github_tools
     def _run(
         self,
@@ -100,11 +233,7 @@ class StarredRepositoriesTool(BaseTool):
     ) -> Command:
         """Execute the starred repositories tool."""
         try:
-            tool_call_id = (
-                generate_tool_call_id("get_starred_repositories")
-                if tool_call_id is None
-                else tool_call_id
-            )
+            tool_call_id = _ensure_tool_call_id(self.name, tool_call_id)
 
             repos = github_tools.get_starred_repositories(
                 username=username,
@@ -175,6 +304,10 @@ class RepositorySearchTool(StructuredTool):
     Useful for finding repositories based on language, stars, topics, etc.
     """
     args_schema: type[BaseModel] = SearchRepoInput
+
+    @functools.cached_property
+    def _injected_args_keys(self) -> frozenset[str]:
+        return frozenset({"tool_call_id"})
 
     @with_github_tools
     def _run(
@@ -326,6 +459,10 @@ class RepositorySearchByTopicTool(StructuredTool):
     """
     args_schema: type[BaseModel] = RepositorySearchByTopicInput
 
+    @functools.cached_property
+    def _injected_args_keys(self) -> frozenset[str]:
+        return frozenset({"tool_call_id"})
+
     @with_github_tools
     def _run(
         self,
@@ -338,11 +475,7 @@ class RepositorySearchByTopicTool(StructuredTool):
             # Create the search parameters model from the kwargs
             search_params = RepositorySearchByTopicInput(**kwargs)
 
-            tool_call_id = (
-                generate_tool_call_id("search_repositories_by_topic")
-                if tool_call_id is None
-                else tool_call_id
-            )
+            tool_call_id = _ensure_tool_call_id(self.name, tool_call_id)
 
             results = github_tools.search_repositories_by_topic(search_params)
 

@@ -33,6 +33,7 @@ from .adapter import (
     can_continue_condition,
     diagnostic_stop_node,
     handle_no_results_node,
+    normalize_tool_message_ids,
     result_analysis_condition,
     run_diagnostics_node,
 )
@@ -89,8 +90,13 @@ def create_graph(
         # Increment step counter
         steps = state.get("step_count", 0) + 1
 
+        # Defensive: scrub orphan tool_call_id mismatches before the LLM sees
+        # the history. This protects against resumed threads persisted by
+        # earlier buggy versions.
+        scrubbed = normalize_tool_message_ids(state["messages"])
+
         # Generate LLM response
-        response = llm_with_tools.invoke(state["messages"])
+        response = llm_with_tools.invoke(scrubbed)
 
         return {"messages": [response], "step_count": steps}
 
@@ -144,8 +150,14 @@ def create_graph(
                     # Prepare tool input with injected parameters
                     tool_input = tool_call.get("args", {}).copy()
 
-                    # Invoke the tool with the prepared input
-                    result = tool.run(tool_input, tool_call_id=tool_call_id)
+                    result = tool.invoke(
+                        {
+                            "args": tool_input,
+                            "id": tool_call_id,
+                            "name": tool_name,
+                            "type": "tool_call",
+                        }
+                    )
 
                     # If tool returns Command, collect it
                     if isinstance(result, Command):
