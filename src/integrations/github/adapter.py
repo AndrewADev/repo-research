@@ -7,6 +7,7 @@ models for input validation and schema generation.
 """
 
 import json
+import re
 from functools import wraps
 from typing import Annotated
 
@@ -507,6 +508,24 @@ class CommitHotspotAnalysisTool(StructuredTool):
             return json.dumps({"error": str(e)})
 
 
+def _tool_payload_has_error(content: str) -> bool:
+    """Return True only when the tool payload itself signals an error.
+
+    Tool error paths in this module emit ``json.dumps({"error": ...})``. Prefer a real
+    JSON parse; fall back to a key-shaped regex only when the payload isn't a JSON
+    object.
+    """
+    try:
+        parsed = json.loads(content)
+    except (ValueError, TypeError):
+        # Not JSON — accept only the JSON-key shape, not bare "error".
+        return re.search(r'"error"\s*:', content) is not None
+
+    if isinstance(parsed, dict) and "error" in parsed:
+        return True
+    return False
+
+
 def result_analysis_condition(state: GitHubToolState) -> str:
     """Analyze tool results for errors and no-results scenarios."""
     messages = state.get("messages", [])
@@ -515,13 +534,14 @@ def result_analysis_condition(state: GitHubToolState) -> str:
 
     last_message = messages[-1]
     if hasattr(last_message, "content") and last_message.content:
-        content = last_message.content.lower()
+        content = last_message.content
 
         # Check for explicit errors first
-        if "error" in content:
+        if _tool_payload_has_error(content):
             return "run_diagnostics"
 
         # Check for no-results scenarios
+        lowered = content.lower()
         no_results_indicators = [
             '"has_results": false',
             '"total_found": 0',
@@ -530,7 +550,7 @@ def result_analysis_condition(state: GitHubToolState) -> str:
             "consider: 1) broadening search terms",
         ]
 
-        if any(indicator in content for indicator in no_results_indicators):
+        if any(indicator in lowered for indicator in no_results_indicators):
             return "handle_no_results"
 
     return "continue"
