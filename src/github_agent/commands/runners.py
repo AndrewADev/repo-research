@@ -1,11 +1,21 @@
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph.state import CompiledStateGraph
+from rich.console import Console
+from rich.markup import escape as rich_escape
 
 from core.models import TemplatedPrompt
 from integrations.github.agent import close_agent_resources, create_configured_agent
 from integrations.github.models import GitHubToolState, get_empty_state
 from storage import ConversationStore
+
+console = Console()
+
+
+def print_prompt_header(prompt_text: str) -> None:
+    console.print("[bold cyan]📋 Prompt:[/bold cyan]")
+    console.print(prompt_text, highlight=False)
+    console.print()
 
 
 def run_templated_prompt(
@@ -33,6 +43,11 @@ def run_templated_prompt(
     # Format the template with the provided arguments
     formatted_prompt = prompt.template.format(**call_args)
 
+    # Build a display-only version with template values bolded so the user can
+    # see which parts of the prompt came from their flags vs. the static text.
+    display_args = {k: f"[bold]{rich_escape(v)}[/bold]" for k, v in call_args.items()}
+    print_prompt_header(prompt.template.format(**display_args))
+
     run_prompt(formatted_prompt, graph, thread_id)
 
 
@@ -55,6 +70,8 @@ def run_prompt(
         for event in events:
             if "messages" in event:
                 last_message = event["messages"][-1]
+                if isinstance(last_message, HumanMessage):
+                    continue
                 print(f"Response: {last_message.content}\n")
 
     except Exception as e:
@@ -174,6 +191,7 @@ def resume_conversation(
 
 
 __all__ = [
+    "print_prompt_header",
     "run_prompt",
     "run_templated_prompt",
     "run_interactive_session",
