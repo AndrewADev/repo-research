@@ -16,7 +16,6 @@ jobs:
       with:
         version: "latest"
         enable-cache: true
-        python-version-file: '.python-version'
 
     - name: Install dependencies
       run: |
@@ -36,7 +35,6 @@ jobs:
       with:
         version: "latest"
         enable-cache: true
-        python-version-file: '.python-version'
 
     - name: Install dependencies
       run: |
@@ -59,7 +57,6 @@ jobs:
       with:
         version: "latest"
         enable-cache: true
-        python-version-file: '.python-version'
 
     - name: Install dependencies
       run: |
