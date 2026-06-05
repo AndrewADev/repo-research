@@ -7,6 +7,8 @@ authors = [
     { name = "Andrew A", email = "AndrewADev@gmail.com" }
 ]
 requires-python = ">=3.13"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 dependencies = [
     "requests>=2.32.0,<3.0.0",
     "python-dotenv>=1.2.1,<2.0.0",

@@ -105,3 +105,7 @@ LANGSMITH_PROJECT=<your proj name>
 ```
 
 Be sure not to include sensitive values in files you commit to source!
+
+## License
+
+Apache 2.0 — see [LICENSE](LICENSE).
