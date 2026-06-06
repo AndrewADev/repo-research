@@ -15,7 +15,7 @@ from agui import emit_agui_events, render_to_console
 from core.models import TemplatedPrompt
 from integrations.github.agent import close_agent_resources, create_configured_agent
 from integrations.github.models import GitHubToolState, get_empty_state
-from storage import ConversationStore
+from storage import ConversationStore, default_db_path
 
 console = Console()
 
@@ -33,6 +33,8 @@ def run_templated_prompt(
     user_args: list[str],
     graph: CompiledStateGraph[GitHubToolState],
     thread_id: str,
+    *,
+    db_path: str | None = None,
 ):
     call_args = {}
 
@@ -58,7 +60,7 @@ def run_templated_prompt(
     display_args = {k: f"[bold]{rich_escape(v)}[/bold]" for k, v in call_args.items()}
     print_prompt_header(prompt.template.format(**display_args))
 
-    run_prompt(formatted_prompt, graph, thread_id)
+    run_prompt(formatted_prompt, graph, thread_id, db_path=db_path)
 
 
 def _summarize_message(msg: Any) -> str:
@@ -135,36 +137,24 @@ async def _stream_through_agui(
     state: GitHubToolState,
     graph: CompiledStateGraph[GitHubToolState],
     config: RunnableConfig,
+    db_path: str,
 ) -> RunErrorEvent | None:
-    """Run the graph through the AG-UI pipeline.
+    """Drive the graph via `astream_events` under an AsyncSqliteSaver.
 
-    Returns the renderer's `RunErrorEvent` (if any) so the CLI runner can
-    surface a rich Python-side diagnostic on top of the protocol-level error.
-
-    `astream_events` (used inside emit_agui_events) calls
-    `await checkpointer.aput(...)`, which the sync `SqliteSaver` does not
-    implement. If the graph was compiled with a sync saver, swap it for an
-    `AsyncSqliteSaver` pointed at the same database for the duration of the
-    run. Both savers share the same checkpoint tables so resumption keeps
-    working across sync read paths (e.g. `ConversationStore.get_messages…`).
+    If the caller pre-attached a checkpointer (e.g. InMemorySaver in tests),
+    use it as-is; otherwise claim an AsyncSqliteSaver for the run.
     """
-    db_path = getattr(graph, "_db_path", None)
-    original_cp = graph.checkpointer
-    needs_async_swap = isinstance(db_path, str) and not isinstance(
-        original_cp, AsyncSqliteSaver
-    )
-
-    if needs_async_swap:
-        async with AsyncSqliteSaver.from_conn_string(db_path) as async_saver:
-            graph.checkpointer = async_saver
-            try:
-                events = emit_agui_events(graph, state, config)
-                return await render_to_console(events, console)
-            finally:
-                graph.checkpointer = original_cp
-    else:
+    if graph.checkpointer is not None:
         events = emit_agui_events(graph, state, config)
         return await render_to_console(events, console)
+
+    async with AsyncSqliteSaver.from_conn_string(db_path) as async_saver:
+        graph.checkpointer = async_saver
+        try:
+            events = emit_agui_events(graph, state, config)
+            return await render_to_console(events, console)
+        finally:
+            graph.checkpointer = None
 
 
 def _exception_from_error_event(event: RunErrorEvent) -> Exception:
@@ -185,59 +175,74 @@ def _handle_run_outcome(
     error_event: RunErrorEvent | None,
     graph: CompiledStateGraph[GitHubToolState],
     config: RunnableConfig,
+    db_path: str,
 ) -> None:
-    """Surface a rich diagnostic if the run ended with a `RunErrorEvent`."""
     if error_event is None:
         return
     _report_prompt_error(
-        _exception_from_error_event(error_event), _fetch_last_event(graph, config)
+        _exception_from_error_event(error_event),
+        _fetch_last_event(graph, config, db_path),
     )
 
 
 def _fetch_last_event(
-    graph: CompiledStateGraph[GitHubToolState], config: RunnableConfig
+    graph: CompiledStateGraph[GitHubToolState],
+    config: RunnableConfig,
+    db_path: str,
 ) -> dict | None:
-    """Best-effort snapshot of the graph's most recent checkpoint state.
+    """Read the latest checkpoint state for diagnostics.
 
-    Used for diagnostics after a failed run. The AG-UI emitter consumes
-    `astream_events` (LangChain v2 events) rather than `stream_mode="values"`,
-    so we no longer have an in-flight state dict to pass to `_report_prompt_error`.
-    Instead we read it back from the checkpointer, which was restored to the
-    original sync saver by the time we get here.
+    Called from sync error paths after the AsyncSqliteSaver was detached, so
+    we open a short-lived sync SqliteSaver against the same file. If the graph
+    has a checkpointer attached (test InMemorySaver), use that instead.
     """
+    import sqlite3
+
+    from langgraph.checkpoint.sqlite import SqliteSaver
+
     try:
-        snapshot = graph.get_state(config)
+        if graph.checkpointer is None:
+            with sqlite3.connect(db_path) as conn:
+                graph.checkpointer = SqliteSaver(conn)
+                try:
+                    snapshot = graph.get_state(config)
+                finally:
+                    graph.checkpointer = None
+        else:
+            snapshot = graph.get_state(config)
     except Exception:  # pragma: no cover - mock graphs / missing checkpointer
         return None
     values = getattr(snapshot, "values", None)
-    if isinstance(values, dict):
-        return dict(values)
-    return None
+    return dict(values) if isinstance(values, dict) else None
 
 
 def run_prompt(
     formatted_prompt: str,
     graph: CompiledStateGraph[GitHubToolState],
     thread_id: str,
+    *,
+    db_path: str | None = None,
 ):
+    db_path = db_path or default_db_path()
     config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
     state = get_empty_state(messages=[HumanMessage(content=formatted_prompt)])
 
     try:
-        error_event = asyncio.run(_stream_through_agui(state, graph, config))
+        error_event = asyncio.run(_stream_through_agui(state, graph, config, db_path))
     except Exception as e:
-        _report_prompt_error(e, _fetch_last_event(graph, config))
+        _report_prompt_error(e, _fetch_last_event(graph, config, db_path))
     else:
-        _handle_run_outcome(error_event, graph, config)
+        _handle_run_outcome(error_event, graph, config, db_path)
 
 
-def run_interactive_session(graph: CompiledStateGraph[GitHubToolState], thread_id: str):
-    """Run an interactive chat session.
-
-    Args:
-        graph: Configured LangGraph instance
-        thread_id: Thread identifier for the conversation
-    """
+def run_interactive_session(
+    graph: CompiledStateGraph[GitHubToolState],
+    thread_id: str,
+    *,
+    db_path: str | None = None,
+):
+    """Run an interactive chat session."""
+    db_path = db_path or default_db_path()
     config: RunnableConfig = {"configurable": {"thread_id": thread_id}}
 
     # Interactive loop
@@ -256,11 +261,13 @@ def run_interactive_session(graph: CompiledStateGraph[GitHubToolState], thread_i
 
             state: GitHubToolState = {"messages": [("user", user_input)]}  # type: ignore[typeddict-item]
             try:
-                error_event = asyncio.run(_stream_through_agui(state, graph, config))
+                error_event = asyncio.run(
+                    _stream_through_agui(state, graph, config, db_path)
+                )
             except Exception as e:
-                _report_prompt_error(e, _fetch_last_event(graph, config))
+                _report_prompt_error(e, _fetch_last_event(graph, config, db_path))
             else:
-                _handle_run_outcome(error_event, graph, config)
+                _handle_run_outcome(error_event, graph, config, db_path)
 
         except KeyboardInterrupt:
             print("\n\n👋 Ending conversation.")

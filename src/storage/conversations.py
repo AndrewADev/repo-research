@@ -12,6 +12,13 @@ from typing import Any
 from langgraph.checkpoint.sqlite import SqliteSaver
 
 
+def default_db_path() -> str:
+    """Default SQLite path for conversation metadata + LangGraph checkpoints."""
+    storage_dir = Path.home() / ".github-agent"
+    storage_dir.mkdir(exist_ok=True)
+    return str(storage_dir / "conversations.db")
+
+
 class ConversationStore:
     """Manages conversation metadata persistence using SQLite.
 
@@ -27,13 +34,8 @@ class ConversationStore:
                 Defaults to ~/.github-agent/conversations.db
                 Note: This should be the same database used by SqliteSaver.
         """
-        if db_path is None:
-            home_dir = Path.home()
-            storage_dir = home_dir / ".github-agent"
-            storage_dir.mkdir(exist_ok=True)
-            db_path = str(storage_dir / "conversations.db")
-
-        self.db_path = db_path
+        self.db_path = db_path if db_path is not None else default_db_path()
+        db_path = self.db_path
         self._init_db()
 
         # Create checkpointer for reading messages from LangGraph checkpoints
