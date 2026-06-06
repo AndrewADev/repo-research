@@ -43,6 +43,16 @@ repos:
       - id: check-merge-conflict
       - id: check-case-conflict
 
+  # Keep the CLI reference in README/docs in sync with the Typer app.
+  - repo: local
+    hooks:
+      - id: cli-docs
+        name: Regenerate CLI documentation
+        entry: uv run python scripts/update_cli_docs.py
+        language: system
+        pass_filenames: false
+        files: ^(src/github_agent/main\.py|src/github_agent/commands/.*\.py|scripts/update_cli_docs\.py|README\.md|docs/cli\.md)$
+
   # Additional security checks
   - repo: https://github.com/Yelp/detect-secrets
     rev: v1.5.0
