@@ -5,11 +5,7 @@ This module creates and configures the LangGraph state machine that orchestrates
 GitHub analysis tasks using the configured LLM provider and GitHub tools.
 """
 
-import sqlite3
-from pathlib import Path
-
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import tools_condition
@@ -44,19 +40,12 @@ def create_graph(
     provider_config: LLMProviderConfig,
     memory: BaseCheckpointSaver | None = None,
     temperature: float = 0,
-    db_path: str | None = None,
 ):
-    """
-    Create a LangGraph for GitHub analysis with configurable LLM provider.
+    """Create a LangGraph for GitHub analysis.
 
-    Args:
-        provider_config: Configuration for model provider
-        temperature: Model temperature (0-1)
-        db_path: Path to SQLite database for conversation persistence.
-            Defaults to ~/.github-agent/conversations.db
-
-    Returns:
-        Tuple of (compiled_graph, sqlite_connection) - caller must close connection
+    The graph is compiled with `memory` as its checkpointer (default: `None`).
+    Persistence is the runner's concern — the CLI runner attaches an
+    `AsyncSqliteSaver` per-run; tests can inject an `InMemorySaver` here.
     """
     # Initialize our graph builder
     graph = StateGraph(GitHubToolState)
@@ -244,24 +233,7 @@ def create_graph(
     graph.add_edge("diagnostic_stop", END)
     graph.add_edge(START, "chatbot")
 
-    # Set up checkpointing with SqliteSaver
-    if db_path is None:
-        home_dir = Path.home()
-        storage_dir = home_dir / ".github-agent"
-        storage_dir.mkdir(exist_ok=True)
-        db_path = str(storage_dir / "conversations.db")
-
-    # Create persistent SQLite connection for checkpointing
-    if not memory:
-        conn = sqlite3.connect(db_path, check_same_thread=False)
-        memory = SqliteSaver(conn)
-
-    # Compile the graph. We attach the db_path so async callers (the AG-UI
-    # runner) can swap the sync SqliteSaver for an AsyncSqliteSaver during
-    # `astream_events`, which requires async checkpoint methods.
-    compiled = graph.compile(checkpointer=memory, name="GitHubAgent")
-    compiled._db_path = db_path  # type: ignore[attr-defined]
-    return compiled
+    return graph.compile(checkpointer=memory, name="GitHubAgent")
 
 
 def create_configured_agent(
@@ -287,9 +259,7 @@ def create_configured_agent(
 
 
 def close_agent_resources(graph: CompiledStateGraph):
-    """Close checkpointer database connection if present."""
-    if isinstance(graph.checkpointer, SqliteSaver):
-        if hasattr(graph.checkpointer.conn, "close") and callable(
-            graph.checkpointer.conn.close
-        ):
-            graph.checkpointer.conn.close()
+    """Close the checkpointer's DB connection if it owns one."""
+    close = getattr(getattr(graph.checkpointer, "conn", None), "close", None)
+    if callable(close):
+        close()
