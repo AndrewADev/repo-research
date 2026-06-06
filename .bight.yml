@@ -1,0 +1,5 @@
+project: github-agent
+env_files:
+  - path: .env
+    copy:
+      source: .env
