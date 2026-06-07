@@ -6,16 +6,17 @@ Separates concerns: UI components in app.py, business logic here.
 
 import tempfile
 import uuid
-from collections.abc import Iterator
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 
 from langchain_core.messages import HumanMessage
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from core.config import get_resolved_model_name
 from core.prompts import topic_prompt
 from integrations.github.agent import close_agent_resources, create_configured_agent
 from integrations.github.models import RepositoryRecord
-from storage import ConversationStore
+from storage import ConversationStore, default_db_path
 from ui.favorites import FavoritesState, SavedRepository
 
 
@@ -42,91 +43,72 @@ class SearchHandler:
     """Handle repository search operations."""
 
     @staticmethod
-    def search_with_extraction(
+    async def search_with_extraction(
         topics: str, language: str | None, favorites: dict
-    ) -> Iterator[tuple[str, list[dict], dict]]:
-        """Execute search and extract repositories from results.
-
-        Args:
-            topics: Comma-separated topics to search
-            language: Optional programming language filter
-            favorites: Current favorites state
-
-        Yields:
-            Tuple of (accumulated_text, extracted_repos, favorites)
-        """
+    ) -> AsyncIterator[tuple[str, list[dict], dict]]:
+        """Stream repository search results into the Gradio UI."""
         if not topics.strip():
             yield "Please enter at least one topic.", [], favorites
             return
 
-        # Prepare search parameters
         search_query = topics.strip()
         language_filter = language if language and language != "Any" else ""
         filters_text = f"Language: {language_filter}" if language_filter else ""
 
-        # Generate thread ID
         thread_id = str(uuid.uuid4())
 
         with ConversationStore() as store:
-            resolved_model = get_resolved_model_name(None)
             store.create_conversation(
                 thread_id,
                 "topics",
                 f"UI Search: {search_query}",
-                model_name=resolved_model,
+                model_name=get_resolved_model_name(None),
             )
 
-        # Create agent and run search
         agent = create_configured_agent(model_name_override=None, memory=None)
         try:
-            # Configure thread
             config = {"configurable": {"thread_id": thread_id}}
-
-            # Format prompt with all required template variables
-            call_args = {
-                "topics": search_query,
-                "sort": "stars",
-                "limit": "10",
-                "language": language_filter,
-                "license": "",
-                "min_stars": "10",
-                "max_stars": "",
-                "pushed_after": "",
-                "archived": "",
-                "fork": "",
-                "filters_text": filters_text,
-            }
-            formatted_prompt = topic_prompt.template.format(**call_args)
-
-            # Stream events
-            events = agent.stream(
-                {"messages": [HumanMessage(formatted_prompt)]},
-                config,
-                stream_mode="values",
+            formatted_prompt = topic_prompt.template.format(
+                topics=search_query,
+                sort="stars",
+                limit="10",
+                language=language_filter,
+                license="",
+                min_stars="10",
+                max_stars="",
+                pushed_after="",
+                archived="",
+                fork="",
+                filters_text=filters_text,
             )
+            input_state = {"messages": [HumanMessage(formatted_prompt)]}
 
-            full_response = []
-            final_state = None
-            for event in events:
-                final_state = event  # Keep track of final state
-                if "messages" in event:
-                    last_message = event["messages"][-1]
-                    if hasattr(last_message, "content"):
-                        content = last_message.content
-                        full_response.append(content)
-                        accumulated_text = "\n\n".join(full_response)
-                        yield accumulated_text, [], favorites
+            full_response: list[str] = []
+            final_state: dict | None = None
 
-            # Add thread ID at the end
+            async with AsyncSqliteSaver.from_conn_string(default_db_path()) as saver:
+                agent.checkpointer = saver
+                try:
+                    async for event in agent.astream(
+                        input_state, config, stream_mode="values"
+                    ):
+                        final_state = event
+                        last_message = event.get("messages", [None])[-1]
+                        content = getattr(last_message, "content", None)
+                        if isinstance(content, str) and content:
+                            full_response.append(content)
+                            yield "\n\n".join(full_response), [], favorites
+                finally:
+                    agent.checkpointer = None
+
             final_output = "\n\n".join(full_response)
             final_output += f"\n\n---\n💾 **Thread ID:** `{thread_id}`"
 
-            # Extract repositories from state
-            repos = []
+            repos: list[dict] = []
             if final_state and "tracked_repositories" in final_state:
-                tracked_repos = final_state["tracked_repositories"]
                 repos = [
-                    convert_repository_record_to_dict(repo) for repo in tracked_repos
+                    convert_repository_record_to_dict(repo)
+                    for repo in final_state["tracked_repositories"]
                 ]
 
             yield final_output, repos, favorites
