@@ -4,7 +4,7 @@ Guidance for Claude Code when working in this repository.
 
 ## Project
 
-A GitHub analysis tool built with LangGraph and a configurable LLM provider (Ollama / Anthropic / HuggingFace). It runs predefined analysis workflows over GitHub data with full conversation persistence via SQLite checkpointing.
+A GitHub analysis tool built with LangGraph and a configurable LLM provider (Ollama / Anthropic / HuggingFace). It exposes a set of CLI commands that run predefined analyses over GitHub data, with full conversation persistence via SQLite checkpointing.
 
 ## Environment
 
@@ -42,7 +42,7 @@ class RepositoryAnalysis(BaseModel):
    - `agent.py` — LangGraph state machine config.
    - `models.py` — Pydantic input models.
    - `churn_strategies.py`, `hotspot_tracker.py` — hotspot analysis (see `hotspot-analysis` skill).
-4. **`src/core/`** — `models.py` (Prompt types), `prompts.py` (workflow prompts: `starred_pulse`, `topic_prompt`, `hotspot_analysis`, `run_diagnostic`), `config.py`, `llm.py`.
+4. **`src/core/`** — `models.py` (Prompt types), `prompts.py` (command prompts: `starred_pulse`, `topic_prompt`, `hotspot_analysis`, `run_diagnostic`), `config.py`, `llm.py`.
 5. **`src/ui/`** — Gradio web UI (`app.py`, `components.py`, `handlers.py`).
 
 ## Key Design Patterns
@@ -53,7 +53,7 @@ class RepositoryAnalysis(BaseModel):
 - **Strategy pattern**: pluggable churn calculations for hotspot analysis.
 - **Rate limiting**: GitHub client handles backoff on rate limit responses.
 
-## Workflow
+## Request flow
 
 User prompt → LangGraph orchestrates LLM reasoning + tool calls → GitHub tools execute → results fed back to LLM for synthesis → streamed to user and persisted. Thread IDs let users resume multi-session investigations.
 
