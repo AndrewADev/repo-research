@@ -8,9 +8,9 @@ import sqlite3
 from datetime import UTC, datetime
 from typing import Any
 
-from langgraph.checkpoint.sqlite import SqliteSaver
-
 from repo_research.storage_paths import storage_root
+
+from .serde import make_sync_sqlite_saver
 
 
 def default_db_path() -> str:
@@ -39,7 +39,7 @@ class ConversationStore:
 
         # Create checkpointer for reading messages from LangGraph checkpoints
         self._checkpoint_conn = sqlite3.connect(db_path, check_same_thread=False)
-        self._checkpointer = SqliteSaver(self._checkpoint_conn)
+        self._checkpointer = make_sync_sqlite_saver(self._checkpoint_conn)
 
     def __enter__(self):
         """Context manager entry."""
