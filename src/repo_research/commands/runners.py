@@ -6,7 +6,6 @@ from typing import Any
 from ag_ui.core import RunErrorEvent
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph.state import CompiledStateGraph
 from rich.console import Console
 from rich.markup import escape as rich_escape
@@ -15,7 +14,12 @@ from agui import emit_agui_events, render_to_console
 from core.models import TemplatedPrompt
 from integrations.github.agent import close_agent_resources, create_configured_agent
 from integrations.github.models import GitHubToolState, get_empty_state
-from storage import ConversationStore, default_db_path
+from storage import (
+    ConversationStore,
+    default_db_path,
+    make_sync_sqlite_saver,
+    open_async_sqlite_saver,
+)
 
 console = Console()
 
@@ -148,7 +152,7 @@ async def _stream_through_agui(
         events = emit_agui_events(graph, state, config)
         return await render_to_console(events, console)
 
-    async with AsyncSqliteSaver.from_conn_string(db_path) as async_saver:
+    async with open_async_sqlite_saver(db_path) as async_saver:
         graph.checkpointer = async_saver
         try:
             events = emit_agui_events(graph, state, config)
@@ -198,12 +202,10 @@ def _fetch_last_event(
     """
     import sqlite3
 
-    from langgraph.checkpoint.sqlite import SqliteSaver
-
     try:
         if graph.checkpointer is None:
             with sqlite3.connect(db_path) as conn:
-                graph.checkpointer = SqliteSaver(conn)
+                graph.checkpointer = make_sync_sqlite_saver(conn)
                 try:
                     snapshot = graph.get_state(config)
                 finally:
