@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 
 from dotenv import load_dotenv
 
+from .cached_client import CachedGitHubClient
 from .github_client import GitHubAPIError, GitHubClient
 
 if TYPE_CHECKING:
@@ -141,7 +142,7 @@ class GitHubTools:
         if not token:
             raise ValueError("GitHub token not provided and not found in environment")
 
-        self.client = GitHubClient(token)
+        self.client: GitHubClient = CachedGitHubClient(token)
 
     def _handle_rate_limit(self) -> None:
         """Check rate limit and sleep if necessary."""
