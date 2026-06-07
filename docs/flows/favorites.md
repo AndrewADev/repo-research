@@ -50,7 +50,7 @@
       ReturnFalse --> SerializeState
 
       SerializeState --> UpdateBrowser[Update Browser State gr.BrowserState]
-      UpdateBrowser --> PersistStorage[Persist to localStorage: github_agent_favorites_v1]
+      UpdateBrowser --> PersistStorage[Persist to localStorage: repo_research_favorites_v1]
 
       PersistStorage --> ShowSuccess[Show Success: ✅ Saved repo_name]
 
@@ -108,7 +108,7 @@
 
 #### 6. Browser Storage
 - Serialized state updates Gradio `BrowserState` component in `src/ui/app.py`
-- `BrowserState` persists to browser's localStorage with key: `github_agent_favorites_v1`
+- `BrowserState` persists to browser's localStorage with key: `repo_research_favorites_v1`
 - Data survives page refreshes and server restarts (stored client-side)
 - Success message displayed: "✅ Saved {repo_name}"
 

@@ -1,9 +1,9 @@
 import typer
 from dotenv import load_dotenv
 
-from github_agent import commands
-from github_agent.commands.chat import chat
-from github_agent.commands.runners import (
+from repo_research import commands
+from repo_research.commands.chat import chat
+from repo_research.commands.runners import (
     resume_conversation,
     run_interactive_session,
     run_prompt,

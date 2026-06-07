@@ -6,12 +6,12 @@ from langchain_core.messages import AIMessage, ToolMessage
 from langchain_core.prompts import PromptTemplate
 
 from core.models import TemplatedPrompt
-from github_agent.commands.runners import (
+from repo_research.commands.runners import (
     _format_recent_messages,
     _report_prompt_error,
     _summarize_message,
 )
-from github_agent.main import run_templated_prompt
+from repo_research.main import run_templated_prompt
 from tests.conftest import raising_async_iter, recording_async_iter
 
 
@@ -115,7 +115,7 @@ class TestErrorReporting:
         assert "no messages" in _format_recent_messages({"messages": []})
 
     def test_report_surfaces_http_body_from_response(self, capsys, monkeypatch):
-        monkeypatch.delenv("GITHUB_AGENT_DEBUG", raising=False)
+        monkeypatch.delenv("RR_DEBUG", raising=False)
 
         err = RuntimeError("(Request ID: Root=1-abc;xyz)\n\nBad request:\n")
         err.response = _FakeResponse(  # type: ignore[attr-defined]
@@ -130,10 +130,10 @@ class TestErrorReporting:
         assert "RuntimeError" in out  # exception type surfaced
         assert "HTTP status:" in out and "400" in out
         assert "tool_call_id mismatch" in out  # the body we previously lost
-        assert "GITHUB_AGENT_DEBUG=1" in out  # debug hint shown when off
+        assert "RR_DEBUG=1" in out  # debug hint shown when off
 
     def test_report_includes_recent_message_context(self, capsys, monkeypatch):
-        monkeypatch.delenv("GITHUB_AGENT_DEBUG", raising=False)
+        monkeypatch.delenv("RR_DEBUG", raising=False)
 
         event = {
             "messages": [
@@ -165,11 +165,11 @@ class TestErrorReporting:
         assert "get_starred_repositories" in out
 
     def test_report_traceback_only_when_debug_env_set(self, capsys, monkeypatch):
-        monkeypatch.setenv("GITHUB_AGENT_DEBUG", "1")
+        monkeypatch.setenv("RR_DEBUG", "1")
         try:
             raise RuntimeError("boom")
         except RuntimeError as e:
             _report_prompt_error(e, last_event=None)
         out = capsys.readouterr().out
         assert "Traceback:" in out
-        assert "GITHUB_AGENT_DEBUG=1" not in out  # hint suppressed when already on
+        assert "RR_DEBUG=1" not in out  # hint suppressed when already on

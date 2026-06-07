@@ -1,9 +1,9 @@
-# `github-agent`
+# `repo-research`
 
 **Usage**:
 
 ```console
-$ github-agent [OPTIONS] COMMAND [ARGS]...
+$ repo-research [OPTIONS] COMMAND [ARGS]...
 ```
 
 **Options**:
@@ -24,14 +24,14 @@ $ github-agent [OPTIONS] COMMAND [ARGS]...
 * `resume`: Resume an existing conversation interactively
 * `ui`: Launch the Gradio web UI
 
-## `github-agent diagnostics`
+## `repo-research diagnostics`
 
 Diagnose issues with the setup
 
 **Usage**:
 
 ```console
-$ github-agent diagnostics [OPTIONS]
+$ repo-research diagnostics [OPTIONS]
 ```
 
 **Options**:
@@ -40,14 +40,14 @@ $ github-agent diagnostics [OPTIONS]
 * `--thread-id TEXT`: Resume conversation with this thread ID
 * `--help`: Show this message and exit.
 
-## `github-agent pulse`
+## `repo-research pulse`
 
 Analyze activity of user&#x27;s starred repositories
 
 **Usage**:
 
 ```console
-$ github-agent pulse [OPTIONS]
+$ repo-research pulse [OPTIONS]
 ```
 
 **Options**:
@@ -59,14 +59,14 @@ $ github-agent pulse [OPTIONS]
 * `--thread-id TEXT`: Resume conversation with this thread ID
 * `--help`: Show this message and exit.
 
-## `github-agent topics`
+## `repo-research topics`
 
 Search for repositories related to specific topics/with specific labels
 
 **Usage**:
 
 ```console
-$ github-agent topics [OPTIONS] TOPICS_RAW
+$ repo-research topics [OPTIONS] TOPICS_RAW
 ```
 
 **Arguments**:
@@ -88,14 +88,14 @@ $ github-agent topics [OPTIONS] TOPICS_RAW
 * `--thread-id TEXT`: Resume conversation with this thread ID
 * `--help`: Show this message and exit.
 
-## `github-agent hotspots`
+## `repo-research hotspots`
 
 Analyze maintenance hotspots in a repository
 
 **Usage**:
 
 ```console
-$ github-agent hotspots [OPTIONS] REPO
+$ repo-research hotspots [OPTIONS] REPO
 ```
 
 **Arguments**:
@@ -113,14 +113,14 @@ $ github-agent hotspots [OPTIONS] REPO
 * `--export-md`: Export analysis to markdown file in ./outputs/ directory
 * `--help`: Show this message and exit.
 
-## `github-agent history`
+## `repo-research history`
 
 List recent conversation history
 
 **Usage**:
 
 ```console
-$ github-agent history [OPTIONS]
+$ repo-research history [OPTIONS]
 ```
 
 **Options**:
@@ -128,14 +128,14 @@ $ github-agent history [OPTIONS]
 * `-n, --limit INTEGER`: Number of conversations to show  [default: 20]
 * `--help`: Show this message and exit.
 
-## `github-agent show`
+## `repo-research show`
 
 Display full conversation transcript
 
 **Usage**:
 
 ```console
-$ github-agent show [OPTIONS] THREAD_ID
+$ repo-research show [OPTIONS] THREAD_ID
 ```
 
 **Arguments**:
@@ -146,14 +146,14 @@ $ github-agent show [OPTIONS] THREAD_ID
 
 * `--help`: Show this message and exit.
 
-## `github-agent chat`
+## `repo-research chat`
 
 Start a new interactive chat session
 
 **Usage**:
 
 ```console
-$ github-agent chat [OPTIONS]
+$ repo-research chat [OPTIONS]
 ```
 
 **Options**:
@@ -161,14 +161,14 @@ $ github-agent chat [OPTIONS]
 * `--model-name TEXT`: Override the model name for this command
 * `--help`: Show this message and exit.
 
-## `github-agent resume`
+## `repo-research resume`
 
 Resume an existing conversation interactively
 
 **Usage**:
 
 ```console
-$ github-agent resume [OPTIONS] [THREAD_ID]
+$ repo-research resume [OPTIONS] [THREAD_ID]
 ```
 
 **Arguments**:
@@ -181,14 +181,14 @@ $ github-agent resume [OPTIONS] [THREAD_ID]
 * `--model-name TEXT`: Override the model name for this command
 * `--help`: Show this message and exit.
 
-## `github-agent ui`
+## `repo-research ui`
 
 Launch the Gradio web UI
 
 **Usage**:
 
 ```console
-$ github-agent ui [OPTIONS]
+$ repo-research ui [OPTIONS]
 ```
 
 **Options**:

@@ -1,4 +1,4 @@
-project: github-agent
+project: repo-research
 env_files:
   - path: .env
     copy:

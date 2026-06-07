@@ -4,7 +4,7 @@ import uuid
 
 import pytest
 
-from github_agent.main import chat, resume_conversation, run_interactive_session
+from repo_research.main import chat, resume_conversation, run_interactive_session
 from tests.conftest import empty_async_iter, recording_async_iter
 
 
@@ -119,27 +119,27 @@ class TestChatCommand:
         """Test that chat command creates a new conversation."""
         # Mock dependencies
         mock_run_session = mocker.patch(
-            "github_agent.commands.chat.run_interactive_session"
+            "repo_research.commands.chat.run_interactive_session"
         )
         mock_create_graph = mocker.patch(
-            "github_agent.commands.chat.create_configured_agent"
+            "repo_research.commands.chat.create_configured_agent"
         )
 
         # Mock the conversation store to use our test store
         mocker.patch(
-            "github_agent.commands.chat.ConversationStore",
+            "repo_research.commands.chat.ConversationStore",
             return_value=mock_store,
         )
 
         # Mock get_resolved_model_name
         mocker.patch(
-            "github_agent.commands.chat.get_resolved_model_name",
+            "repo_research.commands.chat.get_resolved_model_name",
             return_value="qwen3:8b",
         )
 
         # Mock UUID generation for predictability
         test_uuid = "test-uuid-1234"
-        mocker.patch("github_agent.commands.chat.uuid.uuid4", return_value=test_uuid)
+        mocker.patch("repo_research.commands.chat.uuid.uuid4", return_value=test_uuid)
 
         mock_graph = mocker.MagicMock()
         mock_create_graph.return_value = mock_graph
@@ -161,22 +161,22 @@ class TestChatCommand:
     def test_uses_custom_model_name(self, mock_store, mocker):
         """Test that chat command respects custom model_name."""
         # Mock dependencies
-        mocker.patch("github_agent.commands.chat.run_interactive_session")
+        mocker.patch("repo_research.commands.chat.run_interactive_session")
         mock_create_graph = mocker.patch(
-            "github_agent.commands.chat.create_configured_agent"
+            "repo_research.commands.chat.create_configured_agent"
         )
 
         mocker.patch(
-            "github_agent.commands.chat.ConversationStore",
+            "repo_research.commands.chat.ConversationStore",
             return_value=mock_store,
         )
         mocker.patch(
-            "github_agent.commands.chat.get_resolved_model_name",
+            "repo_research.commands.chat.get_resolved_model_name",
             return_value="claude-3-opus-20240229",
         )
 
         test_uuid = "test-uuid-5678"
-        mocker.patch("github_agent.commands.chat.uuid.uuid4", return_value=test_uuid)
+        mocker.patch("repo_research.commands.chat.uuid.uuid4", return_value=test_uuid)
 
         mock_graph = mocker.MagicMock()
         mock_create_graph.return_value = mock_graph
@@ -204,10 +204,10 @@ class TestResumeCommand:
         """
         # Mock dependencies
         mock_run_session = mocker.patch(
-            "github_agent.commands.runners.run_interactive_session"
+            "repo_research.commands.runners.run_interactive_session"
         )
         mock_create_graph = mocker.patch(
-            "github_agent.commands.runners.create_configured_agent"
+            "repo_research.commands.runners.create_configured_agent"
         )
 
         thread_id = str(uuid.uuid4())
@@ -216,7 +216,7 @@ class TestResumeCommand:
         )
 
         mocker.patch(
-            "github_agent.commands.runners.ConversationStore",
+            "repo_research.commands.runners.ConversationStore",
             return_value=mock_store,
         )
 
@@ -232,7 +232,7 @@ class TestResumeCommand:
     def test_fails_on_nonexistent_conversation(self, mock_store, mocker):
         """Test that resume fails gracefully for nonexistent conversation."""
         mocker.patch(
-            "github_agent.commands.runners.ConversationStore",
+            "repo_research.commands.runners.ConversationStore",
             return_value=mock_store,
         )
 
@@ -243,7 +243,7 @@ class TestResumeCommand:
     def test_fails_when_both_thread_id_and_last_specified(self, mock_store, mocker):
         """Test that resume fails when both thread_id and last are specified."""
         mocker.patch(
-            "github_agent.commands.runners.ConversationStore",
+            "repo_research.commands.runners.ConversationStore",
             return_value=mock_store,
         )
 
@@ -254,7 +254,7 @@ class TestResumeCommand:
     def test_fails_when_neither_thread_id_nor_last_specified(self, mock_store, mocker):
         """Test that resume fails when neither thread_id nor last are specified."""
         mocker.patch(
-            "github_agent.commands.runners.ConversationStore",
+            "repo_research.commands.runners.ConversationStore",
             return_value=mock_store,
         )
 
@@ -275,10 +275,10 @@ class TestIntegration:
         # Setup mocks — chat() and resume_conversation() now live in separate
         # modules, so patch both.
         mock_create_graph_chat = mocker.patch(
-            "github_agent.commands.chat.create_configured_agent"
+            "repo_research.commands.chat.create_configured_agent"
         )
         mock_create_graph_runners = mocker.patch(
-            "github_agent.commands.runners.create_configured_agent"
+            "repo_research.commands.runners.create_configured_agent"
         )
 
         mock_graph = mocker.MagicMock()
@@ -287,18 +287,18 @@ class TestIntegration:
         mock_create_graph_runners.return_value = mock_graph
 
         mocker.patch(
-            "github_agent.commands.chat.ConversationStore", return_value=mock_store
+            "repo_research.commands.chat.ConversationStore", return_value=mock_store
         )
         mocker.patch(
-            "github_agent.commands.runners.ConversationStore", return_value=mock_store
+            "repo_research.commands.runners.ConversationStore", return_value=mock_store
         )
         mocker.patch(
-            "github_agent.commands.chat.get_resolved_model_name",
+            "repo_research.commands.chat.get_resolved_model_name",
             return_value="qwen3:8b",
         )
 
         test_uuid = str(uuid.uuid4())
-        mocker.patch("github_agent.commands.chat.uuid.uuid4", return_value=test_uuid)
+        mocker.patch("repo_research.commands.chat.uuid.uuid4", return_value=test_uuid)
 
         # Mock user input for chat session
         mock_input = mocker.patch("builtins.input")

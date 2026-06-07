@@ -1,4 +1,4 @@
-"""Gradio UI application for GitHub Agent."""
+"""Gradio UI application for Repo Research."""
 
 import gradio as gr
 from dotenv import load_dotenv
@@ -239,8 +239,25 @@ def launch_ui(
         server_name: Server hostname/IP
         server_port: Server port number
     """
-    with gr.Blocks(title="GitHub Agent", theme=gr.themes.Soft()) as app:
-        gr.Markdown("# 🤖 GitHub Agent")
+    # One-time migration: copy favorites from the legacy localStorage key to the
+    # new one on first page load if the new key is empty. Runs before BrowserState
+    # reads its value.
+    favorites_migration_js = """
+    () => {
+        const NEW_KEY = 'repo_research_favorites_v1';
+        const OLD_KEY = 'github_agent_favorites_v1';
+        try {
+            if (!localStorage.getItem(NEW_KEY) && localStorage.getItem(OLD_KEY)) {
+                localStorage.setItem(NEW_KEY, localStorage.getItem(OLD_KEY));
+            }
+        } catch (e) { /* localStorage unavailable; ignore */ }
+    }
+    """
+
+    with gr.Blocks(
+        title="Repo Research", theme=gr.themes.Soft(), js=favorites_migration_js
+    ) as app:
+        gr.Markdown("# 🔍 Repo Research")
         gr.Markdown(
             "Analyze GitHub repositories using AI-powered workflows. "
             "Powered by LangGraph and configurable LLM providers."
@@ -251,7 +268,7 @@ def launch_ui(
         # This ensures data persists across both page refreshes AND server restarts
         # Note: If you see localStorage errors, clear your browser's site data
         favorites_state = gr.BrowserState(
-            default_value={"saved_repos": []}, storage_key="github_agent_favorites_v1"
+            default_value={"saved_repos": []}, storage_key="repo_research_favorites_v1"
         )
 
         with gr.Tabs():

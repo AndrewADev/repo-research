@@ -128,7 +128,9 @@ DEFAULT_POLICIES: Final[list[CachePolicy]] = [
 
 def default_cache_dir() -> Path:
     """Default on-disk cache location, matching the conversations DB pattern."""
-    return Path.home() / ".github-agent" / "cache"
+    from repo_research.storage_paths import storage_root
+
+    return storage_root() / "cache"
 
 
 def hash_token(token: str) -> str:

@@ -19,8 +19,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 README_PATH = REPO_ROOT / "README.md"
 CLI_DOC_PATH = REPO_ROOT / "docs" / "cli.md"
-TYPER_TARGET = "src/github_agent/main.py"
-CLI_NAME = "github-agent"
+TYPER_TARGET = "src/repo_research/main.py"
+CLI_NAME = "repo-research"
 
 START_MARKER = "<!-- CLI-DOCS-START -->"
 END_MARKER = "<!-- CLI-DOCS-END -->"

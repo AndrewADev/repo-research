@@ -6,17 +6,16 @@ This class only manages conversation metadata (command, model, summary, timestam
 
 import sqlite3
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
 from langgraph.checkpoint.sqlite import SqliteSaver
 
+from repo_research.storage_paths import storage_root
+
 
 def default_db_path() -> str:
     """Default SQLite path for conversation metadata + LangGraph checkpoints."""
-    storage_dir = Path.home() / ".github-agent"
-    storage_dir.mkdir(exist_ok=True)
-    return str(storage_dir / "conversations.db")
+    return str(storage_root() / "conversations.db")
 
 
 class ConversationStore:
@@ -31,7 +30,7 @@ class ConversationStore:
 
         Args:
             db_path: Path to SQLite database.
-                Defaults to ~/.github-agent/conversations.db
+                Defaults to ~/.repo-research/conversations.db
                 Note: This should be the same database used by SqliteSaver.
         """
         self.db_path = db_path if db_path is not None else default_db_path()

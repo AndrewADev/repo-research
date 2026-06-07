@@ -22,7 +22,7 @@ from .cache import (
 )
 from .github_client import GitHubClient
 
-_ENV_DISABLE: str = "GITHUB_AGENT_CACHE_DISABLE"
+_ENV_DISABLE: str = "RR_CACHE_DISABLE"
 
 
 def _cache_disabled_by_env() -> bool:

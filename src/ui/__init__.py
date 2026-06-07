@@ -1,4 +1,4 @@
-"""Gradio UI for GitHub Agent."""
+"""Gradio UI for Repo Research."""
 
 from ui.app import launch_ui
 
