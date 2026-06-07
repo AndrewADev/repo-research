@@ -48,7 +48,7 @@ def cache(cache_dir: Path) -> GitHubCache:
 
 @pytest.fixture
 def client(cache: GitHubCache, monkeypatch: pytest.MonkeyPatch) -> CachedGitHubClient:
-    monkeypatch.delenv("GITHUB_AGENT_CACHE_DISABLE", raising=False)
+    monkeypatch.delenv("RR_CACHE_DISABLE", raising=False)
     c = CachedGitHubClient(token="test-token-123", cache=cache)
     yield c
     # Don't double-close the cache (fixture owns it); just close the session.
@@ -234,7 +234,7 @@ class TestEnabledFlag:
     def test_enabled_false_disables_caching(
         self, cache: GitHubCache, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.delenv("GITHUB_AGENT_CACHE_DISABLE", raising=False)
+        monkeypatch.delenv("RR_CACHE_DISABLE", raising=False)
         c = CachedGitHubClient(token="t", cache=cache, enabled=False)
         stub = MagicMock(
             side_effect=[_stub_response({"v": 1}), _stub_response({"v": 2})]
@@ -253,7 +253,7 @@ class TestEnabledFlag:
         monkeypatch: pytest.MonkeyPatch,
         env_value: str,
     ) -> None:
-        monkeypatch.setenv("GITHUB_AGENT_CACHE_DISABLE", env_value)
+        monkeypatch.setenv("RR_CACHE_DISABLE", env_value)
         c = CachedGitHubClient(token="t", cache=cache)
         stub = MagicMock(
             side_effect=[_stub_response({"v": 1}), _stub_response({"v": 2})]

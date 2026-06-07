@@ -233,7 +233,7 @@ def create_graph(
     graph.add_edge("diagnostic_stop", END)
     graph.add_edge(START, "chatbot")
 
-    return graph.compile(checkpointer=memory, name="GitHubAgent")
+    return graph.compile(checkpointer=memory, name="RepoResearch")
 
 
 def create_configured_agent(

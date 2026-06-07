@@ -1,4 +1,4 @@
-"""Reusable Gradio UI components for GitHub Agent."""
+"""Reusable Gradio UI components for Repo Research."""
 
 import gradio as gr
 

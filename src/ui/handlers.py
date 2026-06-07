@@ -247,7 +247,7 @@ class FavoritesHandler:
         csv_content = state.export_csv()
 
         with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".csv", delete=False, prefix="github_agent_favorites_"
+            mode="w", suffix=".csv", delete=False, prefix="repo_research_favorites_"
         ) as f:
             f.write(csv_content)
             file_path = f.name

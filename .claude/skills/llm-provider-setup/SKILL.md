@@ -45,4 +45,4 @@ Gotcha: the chosen model **must** support tool calling — many small models do 
 
 ## Diagnostics
 
-Run `uv run github-agent diagnostics` to surface provider/auth issues before running an analysis.
+Run `uv run repo-research diagnostics` to surface provider/auth issues before running an analysis.

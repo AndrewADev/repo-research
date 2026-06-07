@@ -19,7 +19,7 @@ from storage import ConversationStore, default_db_path
 
 console = Console()
 
-DEBUG_ENV_VAR = "GITHUB_AGENT_DEBUG"
+DEBUG_ENV_VAR = "RR_DEBUG"
 
 
 def print_prompt_header(prompt_text: str) -> None:

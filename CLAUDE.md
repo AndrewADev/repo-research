@@ -10,8 +10,8 @@ A GitHub analysis tool built with LangGraph and a configurable LLM provider (Oll
 
 - Install: `uv sync` (add `--dev` for dev tools)
 - Required env: `GITHUB_TOKEN`. Provider config (`LLM_PROVIDER`, `ANTHROPIC_API_KEY`, etc.) — see the `llm-provider-setup` skill.
-- CLI: `uv run github-agent --help` lists all commands and flags. Don't duplicate that surface here.
-- Conversations persist to `~/.github-agent/conversations.db`; each run prints a thread ID usable with `resume` / `show`.
+- CLI: `uv run repo-research --help` lists all commands and flags. Don't duplicate that surface here.
+- Conversations persist to `~/.repo-research/conversations.db`; each run prints a thread ID usable with `resume` / `show`.
 
 ## Code Style and Type Safety
 
@@ -33,7 +33,7 @@ class RepositoryAnalysis(BaseModel):
 
 ## Core Components
 
-1. **`src/github_agent/main.py`** — Typer CLI entry point; builds the LangGraph, defines analysis prompts, streams responses, manages thread IDs.
+1. **`src/repo_research/main.py`** — Typer CLI entry point; builds the LangGraph, defines analysis prompts, streams responses, manages thread IDs.
 2. **`src/storage/conversations.py`** — `ConversationStore`, SQLite-backed conversation history with thread management.
 3. **`src/integrations/github/`** — GitHub integration:
    - `github_client.py` — **custom** HTTP client (not PyGithub) for type safety and reduced deps.

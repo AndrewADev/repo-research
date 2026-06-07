@@ -8,7 +8,7 @@ from typing import Annotated, TypedDict
 from langgraph.graph.message import add_messages
 from langgraph.graph.state import StateGraph
 
-from github_agent.commands.runners import _fetch_last_event, run_prompt
+from repo_research.commands.runners import _fetch_last_event, run_prompt
 
 
 class _State(TypedDict):

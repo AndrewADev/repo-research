@@ -64,6 +64,6 @@ jobs:
 
     - name: Run smoke tests
       run: |
-        uv run github-agent --help
+        uv run repo-research --help
       env:
         PYTHONDEVMODE: 1

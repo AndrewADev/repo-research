@@ -7,7 +7,7 @@ description: Reference for the hotspot/churn analysis feature — churn formulas
 
 Commit hotspot analysis identifies files with high maintenance burden by computing per-file churn over a time window.
 
-CLI entry point: `uv run github-agent hotspots <owner/repo>` with `--path`, `--strategy` (`activity` or `rework`), `--since`, `--until`, `--export-md`.
+CLI entry point: `uv run repo-research hotspots <owner/repo>` with `--path`, `--strategy` (`activity` or `rework`), `--since`, `--until`, `--export-md`.
 
 ## Churn Calculation Strategies
 
