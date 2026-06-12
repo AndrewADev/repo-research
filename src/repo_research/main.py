@@ -24,6 +24,7 @@ for _module in (
     commands.chat,
     commands.resume,
     commands.ui,
+    commands.serve,
 ):
     _module.register(app)
 
